@@ -1,0 +1,958 @@
+{
+  "name": "Alertas y gestión de novedades",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Funciones auxiliares de fecha\nfunction parsearFechaLatam(fechaStr) {\n  if (!fechaStr || typeof fechaStr !== 'string') return null;\n  // Aceptar tanto \"dd/mm/aaaa\" como \"dd-mm-aaaa\"\n  const fechaNormalizada = fechaStr.replace(/-/g, '/');\n  const partes = fechaNormalizada.split('/');\n  if (partes.length !== 3) return null;\n  return new Date(parseInt(partes[2], 10), parseInt(partes[1], 10) - 1, parseInt(partes[0], 10));\n}\n\nfunction formatearFechaLatam(date) {\n  return String(date.getDate()).padStart(2, '0') + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + date.getFullYear();\n}\n\nconst hoy = new Date();\nhoy.setHours(0, 0, 0, 0);\nconst resultados = [];\n\n// Determinar si el evento es de \"Disparador Nueva Novedad\" (nuevas filas) de forma segura\nlet esNuevaNovacion = false;\ntry {\n  esNuevaNovacion = $('Disparador Nueva Novedad').first().json ? true : false;\n} catch (e) {\n  esNuevaNovacion = false;\n}\n\nfor (const item of $input.all()) {\n  const data = { ...item.json };\n\n  // Normalizar a minúsculas (excepto fechas y la columna de informada)\n  for (const key of Object.keys(data)) {\n    if (\n      typeof data[key] === 'string' &&\n      key !== 'Fecha estimada de solución (Solo Mantenimiento)' &&\n      key !== 'Fecha de creacion (automatico)' &&\n      key !== '¿Informada? (Automatico)'\n    ) {\n      data[key] = data[key].toLowerCase();\n    }\n  }\n\n  // Valores por defecto\n  if (!data['Estado (Solo Mantenimiento)'] || data['Estado (Solo Mantenimiento)'].trim() === '') {\n    data['Estado (Solo Mantenimiento)'] = 'pendiente';\n  }\n\n  if (!data['Fecha de creacion (automatico)'] || data['Fecha de creacion (automatico)'].trim() === '') {\n    data['Fecha de creacion (automatico)'] = formatearFechaLatam(hoy);\n  }\n\n  // Normalizar la fecha estimada: convertir guiones a barras y eliminar espacios\n  let fechaEstimadaStr = data['Fecha estimada de solución (Solo Mantenimiento)'];\n  if (fechaEstimadaStr && typeof fechaEstimadaStr === 'string') {\n    fechaEstimadaStr = fechaEstimadaStr.trim().replace(/-/g, '/');\n  }\n\n  // Semáforo automático\n  let nuevoSemaforo = 'Gris';   // Valor por defecto cuando no hay fecha\n\n  if (fechaEstimadaStr && fechaEstimadaStr !== '') {\n    const fechaEstimada = parsearFechaLatam(fechaEstimadaStr);\n\n    if (fechaEstimada && !isNaN(fechaEstimada)) {\n      const diffTime = fechaEstimada.getTime() - hoy.getTime();\n      const diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));\n\n      if (diasRestantes <= 2) {\n        nuevoSemaforo = 'Rojo';\n      } else if (diasRestantes <= 4) {\n        nuevoSemaforo = 'Naranja';\n      } else {\n        nuevoSemaforo = 'Verde';\n      }\n    }\n  }\n\n  data['Semaforo (automatico)'] = nuevoSemaforo;\n\n  // ¿Está informada?\n  const informadaRaw = data['¿Informada? (Automatico)'];\n\n  const yaInformada =\n    informadaRaw &&\n    informadaRaw\n      .trim()\n      .toLowerCase()\n      .normalize('NFD')\n      .replace(/[\\u0300-\\u036f]/g, '') === 'si';\n\n  // Clave de fila\n  const rowKey = item.json.row_number || data['ID'] || null;\n\n  // NORMALIZAR ESTADO PARA EVITAR CASE SENSITIVE\n  const estado = (\n    data['Estado (Solo Mantenimiento)'] || ''\n  )\n    .trim()\n    .toLowerCase();\n\n  // Cumplida y Cerrada hacen exactamente lo mismo\n  if (['cumplida', 'cerrada'].includes(estado)) {\n\n    resultados.push({\n      json: {\n        tipo: 'historial',\n        Fecha: formatearFechaLatam(hoy),\n        'Máquina': data['Maquina'] || '',\n        'Responsable': data['Quien creó la novedad (Solo nombre)'] || '',\n        'Novedad': data['Observaciones respecto a la novedad (Obligatorio)'] || '',\n        'Fecha creación': data['Fecha de creacion (automatico)'],\n        'Fecha solución': fechaEstimadaStr || '',   // Ya viene normalizada con /\n        'Semaforo final': nuevoSemaforo,\n        'Observaciones': data['Observaciones respecto a la novedad (Obligatorio)'] || ''\n      }\n    });\n\n    if (rowKey) {\n      resultados.push({\n        json: {\n          tipo: 'delete',\n          key: rowKey\n        }\n      });\n    }\n\n  } else {\n\n    resultados.push({\n      json: {\n        tipo: 'update',\n        key: rowKey,\n        ...data,\n        // Si la fecha estimada fue normalizada, reemplazamos en data para que se propague con barras\n        'Fecha estimada de solución (Solo Mantenimiento)': fechaEstimadaStr,\n        enviarCorreo: esNuevaNovacion && !yaInformada\n      }\n    });\n\n  }\n}\n\nif (resultados.length === 0) {\n  resultados.push({\n    json: {\n      tipo: 'vacio'\n    }\n  });\n}\n\nreturn resultados;"
+      },
+      "id": "bf6191a9-879a-4bf7-8d63-d478d9b66eb1",
+      "name": "Procesar Novedad",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        1264
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "4a2330d8-61e1-4036-99c9-e68484651306"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "actualizar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "historial",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "54e832b9-fd03-4614-9926-e4cb16732357"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "historial"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "6964de49-feae-4be8-ba9f-ffa15ef604fe"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "eliminar"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5695afd7-edaa-473b-93e1-c5158b3ce9a7",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -640,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 864152737,
+          "mode": "list",
+          "cachedResultName": "Novedades",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_NOVEDADES/edit#gid=864152737"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.key }}",
+            "Semaforo (automatico)": "={{ $json['Semaforo (automatico)'] }}",
+            "Fecha de creacion (automatico)": "={{ $json['Fecha de creacion (automatico)'] }}",
+            "Estado (Solo Mantenimiento)": "={{ $json['Estado (Solo Mantenimiento)'] }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Maquina",
+              "displayName": "Maquina",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha de creacion (automatico)",
+              "displayName": "Fecha de creacion (automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Semaforo (automatico)",
+              "displayName": "Semaforo (automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha estimada de solución (Solo Mantenimiento)",
+              "displayName": "Fecha estimada de solución (Solo Mantenimiento)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Estado (Solo Mantenimiento)",
+              "displayName": "Estado (Solo Mantenimiento)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Quien creó la novedad (Solo nombre)",
+              "displayName": "Quien creó la novedad (Solo nombre)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Observaciones respecto a la novedad (Obligatorio)",
+              "displayName": "Observaciones respecto a la novedad (Obligatorio)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Informada? (Automatico)",
+              "displayName": "¿Informada? (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "¿Falta repuesto / s? ¿Cuales? (Mantenimiento)",
+              "displayName": "¿Falta repuesto / s? ¿Cuales? (Mantenimiento)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Repuesto Pedido (Compras)",
+              "displayName": "Repuesto Pedido (Compras)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Repuesto Entregado / recibido (Mantenimiento y Compras)",
+              "displayName": "Repuesto Entregado / recibido (Mantenimiento y Compras)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "df8a112d-3367-4fe7-953c-744ecbf92684",
+      "name": "Update row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -416,
+        1072
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Procesar Novedad').item.json[\"¿Informada? (Automatico)\"] }}",
+              "rightValue": true,
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              },
+              "id": "e3b5ffd3-2521-465e-8573-6c98927f38ff"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "05e566a1-fbd7-44be-9ef5-23bf7bc111d5",
+      "name": "¿Enviar correo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -192,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com",
+        "subject": "={{ (() => { const maquina = $('Procesar Novedad').item.json.Maquina || 'Sin máquina'; const icono = $json['Semaforo (automatico)'] === 'rojo' ? '🔴' : $json['Semaforo (automatico)'] === 'naranja' ? '🟠' : '🟢'; return `${icono} Nueva novedad registrada - ${maquina}`; })() }}",
+        "message": "={{ (() => {\n  const maquina = $('Procesar Novedad').item.json.Maquina || 'No especificada';\n  const estado = $('Procesar Novedad').item.json['Estado (Solo Mantenimiento)'] || 'pendiente';\n  const semaforo = $('Procesar Novedad').item.json['Semaforo (automatico)'] || 'verde';\n  const creador = $('Procesar Novedad').item.json['Quien creó la novedad (Solo nombre)'] || 'No registrado';\n  const observaciones = $('Procesar Novedad').item.json['Observaciones respecto a la novedad (Obligatorio)'] || 'Sin observaciones';\n  const fechaCreacion = $json['Fecha de creacion (automatico)'] || new Date().toLocaleDateString('es-CO');\n  const fechaEstimada = $('Procesar Novedad').item.json['Fecha estimada de solución (Solo Mantenimiento)'] || 'No definida';\n  const color = semaforo === 'rojo' ? '#dc3545' : semaforo === 'naranja' ? '#fd7e14' : '#28a745';\n  const icono = semaforo === 'rojo' ? '🔴' : semaforo === 'naranja' ? '🟠' : '🟢';\n  let mensajeAccion = '';\n  if (semaforo === 'rojo') {\n    mensajeAccion = '<p style=\"color: #dc3545; font-weight: bold;\">⚠️ Esta novedad requiere atención inmediata. La fecha estimada está vencida o muy cercana.</p>';\n  } else if (semaforo === 'naranja') {\n    mensajeAccion = '<p style=\"color: #fd7e14; font-weight: bold;\">⚠️ Esta novedad debe ser atendida en los próximos días.</p>';\n  } else {\n    mensajeAccion = '<p style=\"color: #28a745;\">✅ Esta novedad está dentro del tiempo estimado. Programe su atención.</p>';\n  }\n  return `\n  <div style=\"font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden;\">\n    <div style=\"background: ${color}; padding: 25px; text-align: center;\">\n      <h2 style=\"color: white; margin: 0; font-size: 22px;\">${icono} Nueva Novedad de Mantenimiento</h2>\n      <p style=\"color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 14px;\">Registrada el ${fechaCreacion}</p>\n    </div>\n    <div style=\"padding: 30px; background: #ffffff;\">\n      <p style=\"font-size: 16px; color: #333; margin-top: 0;\">Estimado <strong>Jefe de Mantenimiento</strong>,</p>\n      <p style=\"font-size: 15px; color: #555; line-height: 1.6;\">Se ha registrado una nueva novedad en el sistema que requiere su atención y programación.</p>\n      ${mensajeAccion}\n      <div style=\"background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n        <table style=\"width: 100%; border-collapse: collapse;\">\n          <tr>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666; width: 40%;\"><strong>🏭 Máquina:</strong></td>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333; font-weight: bold;\">${maquina.toUpperCase()}</td>\n          </tr>\n          <tr>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666;\"><strong>📊 Estado:</strong></td>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333;\"><span style=\"background: ${color}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: bold;\">${estado.toUpperCase()}</span></td>\n          </tr>\n          <tr>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666;\"><strong>🚦 Semáforo:</strong></td>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333; font-weight: bold;\">${icono} ${semaforo.toUpperCase()}</td>\n          </tr>\n          <tr>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666;\"><strong>👤 Reportado por:</strong></td>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333;\">${creador}</td>\n          </tr>\n          <tr>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666;\"><strong>📅 Fecha estimada:</strong></td>\n            <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333;\">${fechaEstimada}</td>\n          </tr>\n          <tr>\n            <td style=\"padding: 10px 5px; color: #666; vertical-align: top;\"><strong>📝 Observaciones:</strong></td>\n            <td style=\"padding: 10px 5px; color: #333; font-style: italic;\">${observaciones}</td>\n          </tr>\n        </table>\n      </div>\n      <p style=\"font-size: 15px; color: #555; line-height: 1.6;\">Por favor, coordine con el personal técnico para atender esta novedad según su criticidad y actualice el estado una vez solucionada.</p>\n    </div>\n    <div style=\"background: #f1f3f5; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;\">\n      <p style=\"font-size: 12px; color: #888; margin: 0;\">\n        🔧 Sistema Automatizado de Gestión de Mantenimiento<br>\n        <span style=\"font-size: 11px;\">Este correo fue generado automáticamente. Por favor no responda a este mensaje.</span>\n      </p>\n    </div>\n  </div>\n  `;\n})() }}",
+        "options": {
+          "appendAttribution": false,
+          "bccList": "example@example.com, example@example.com",
+          "ccList": "example@example.com, example@example.com"
+        }
+      },
+      "id": "2130dc3e-c3e9-4208-899c-02da412ae730",
+      "name": "Send a message",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        96,
+        1056
+      ],
+      "webhookId": "48f2dbe6-14c0-42c1-9f6c-bc13f34c8aa7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1265834944,
+          "mode": "list",
+          "cachedResultName": "Historial Novedades",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_NOVEDADES/edit#gid=1265834944"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Maquina": "={{ $json['Máquina'] }}",
+            "Fecha de creacion": "={{ $json['Fecha creación'] }}",
+            "Semaforo": "={{ $json['Semaforo final'] }}",
+            "Fecha estimada de solución (Solo Mantenimiento)": "={{ $json['Fecha solución'] }}",
+            "Estado (Solo Mantenimiento)": "Cumplida",
+            "Observaciones respecto a la novedad (Obligatorio)": "={{ $json.Observaciones }}",
+            "Fecha Solución": "={{ $json.Fecha }}",
+            "Quien creó la novedad (Solo nombre)": "={{ $json.Responsable }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Maquina",
+              "displayName": "Maquina",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha de creacion",
+              "displayName": "Fecha de creacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Semaforo",
+              "displayName": "Semaforo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha estimada de solución (Solo Mantenimiento)",
+              "displayName": "Fecha estimada de solución (Solo Mantenimiento)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Estado (Solo Mantenimiento)",
+              "displayName": "Estado (Solo Mantenimiento)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Quien creó la novedad (Solo nombre)",
+              "displayName": "Quien creó la novedad (Solo nombre)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Observaciones respecto a la novedad (Obligatorio)",
+              "displayName": "Observaciones respecto a la novedad (Obligatorio)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha Solución",
+              "displayName": "Fecha Solución",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e937f32f-76de-4def-a13f-d6a69f0392a2",
+      "name": "Agregar a Historial",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -416,
+        1264
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 864152737,
+          "mode": "list",
+          "cachedResultName": "Novedades"
+        },
+        "startIndex": "={{ Number($json.key) }}"
+      },
+      "id": "653449b3-50f5-40b5-b088-b602ee0229f4",
+      "name": "Eliminar fila cumplida",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        48,
+        1440
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 864152737,
+          "mode": "list",
+          "cachedResultName": "Novedades",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_NOVEDADES/edit#gid=864152737"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Update row in sheet').item.json.row_number }}",
+            "¿Informada? (Automatico)": "SI"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Maquina",
+              "displayName": "Maquina",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha de creacion (automatico)",
+              "displayName": "Fecha de creacion (automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Semaforo (automatico)",
+              "displayName": "Semaforo (automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha estimada de solución (Solo Mantenimiento)",
+              "displayName": "Fecha estimada de solución (Solo Mantenimiento)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Estado (Solo Mantenimiento)",
+              "displayName": "Estado (Solo Mantenimiento)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Quien creó la novedad (Solo nombre)",
+              "displayName": "Quien creó la novedad (Solo nombre)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Observaciones respecto a la novedad (Obligatorio)",
+              "displayName": "Observaciones respecto a la novedad (Obligatorio)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Informada? (Automatico)",
+              "displayName": "¿Informada? (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Falta repuesto / s? ¿Cuales? (Mantenimiento)",
+              "displayName": "¿Falta repuesto / s? ¿Cuales? (Mantenimiento)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Repuesto Pedido (Compras)",
+              "displayName": "Repuesto Pedido (Compras)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Repuesto Entregado / recibido (Mantenimiento y Compras)",
+              "displayName": "Repuesto Entregado / recibido (Mantenimiento y Compras)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "11cafe2c-74f3-49b9-b27a-4fa614c90fee",
+      "name": "Update row in sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        352,
+        1056
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1312,
+        1264
+      ],
+      "id": "b273637b-b3e3-4936-b1b0-466c0bdeeaf3",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 864152737,
+          "mode": "list",
+          "cachedResultName": "Novedades",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_NOVEDADES/edit#gid=864152737"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1088,
+        1264
+      ],
+      "id": "13d56838-6167-4c7a-a14b-dacf05f4a9e3",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ (() => {  const maquina = $('Procesar Novedad').item.json.Maquina || 'No especificada';  const estado = $('Procesar Novedad').item.json['Estado (Solo Mantenimiento)'] || 'pendiente';  const semaforo = $('Procesar Novedad').item.json['Semaforo (automatico)'] || 'verde';  const creador = $('Procesar Novedad').item.json['Quien creó la novedad (Solo nombre)'] || 'No registrado';  const observaciones = $('Procesar Novedad').item.json['Observaciones respecto a la novedad (Obligatorio)'] || 'Sin observaciones';  const fechaEstimada = $('Procesar Novedad').item.json['Fecha estimada de solución (Solo Mantenimiento)'] || 'No definida';  const icono = semaforo === 'rojo' ? '🔴' : semaforo === 'naranja' ? '🟠' : '🟢';  return `${icono} *Nueva Novedad de Mantenimiento*\\n` +    `🏭 Máquina: ${maquina.toUpperCase()}\\n` +    `📊 Estado: ${estado.toUpperCase()}\\n` +    `🚦 Semáforo: ${semaforo.toUpperCase()}\\n` +    `👤 Reportado por: ${creador}\\n` +    `📅 Fecha estimada: ${fechaEstimada}\\n` +    `📝 Observaciones: ${observaciones}`;})() }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        96,
+        848
+      ],
+      "id": "3c693e47-e91e-473c-b0f1-e060d10240ee",
+      "name": "Send a text message1",
+      "webhookId": "800c7aed-bd90-44d1-bdcc-8a7d89e4fb93",
+      "credentials": {
+        "telegramApi": {
+          "id": "PBjL8AcZDKhasbZY",
+          "name": "Telegram Bot Mantenimiento"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -416,
+        1424
+      ],
+      "id": "8f7feb25-4a8c-4e3f-971e-436d10675ea1",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -208,
+        1264
+      ],
+      "id": "dbba272d-c9ec-4671-ab40-38c25e69ad57",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst maquina = data['Maquina'] || 'No especificada';\nconst creador = data['Quien creó la novedad (Solo nombre)'] || 'No registrado';\nconst observaciones = data['Observaciones respecto a la novedad (Obligatorio)'] || 'Sin observaciones';\nconst fechaCreacion = data['Fecha de creacion'] || '';\nconst fechaEstimada = data['Fecha estimada de solución (Solo Mantenimiento)'] || 'No definida';\nconst fechaSolucion = data['Fecha Solución'] || new Date().toLocaleDateString('es-CO');\nconst semaforo = data['Semaforo'] || 'Gris';\nconst colorCabecera = semaforo === 'Rojo' ? '#dc3545' : semaforo === 'Naranja' ? '#fd7e14' : '#28a745';\nconst iconoSemaforo = semaforo === 'Rojo' ? '🔴' : semaforo === 'Naranja' ? '🟠' : '🟢';\n\nconst html = `\n<div style=\"font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden;\">\n  <div style=\"background: ${colorCabecera}; padding: 25px; text-align: center;\">\n    <h2 style=\"color: white; margin: 0; font-size: 22px;\">✅ Novedad Cumplida / Cerrada</h2>\n    <p style=\"color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 14px;\">Solucionada el ${fechaSolucion}</p>\n  </div>\n  <div style=\"padding: 30px; background: #ffffff;\">\n    <p style=\"font-size: 15px; color: #555; line-height: 1.6;\">\n      Estimado <strong>Supervisor</strong>,<br>\n      Se ha cerrado la siguiente novedad de mantenimiento:\n    </p>\n    <div style=\"background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n      <table style=\"width: 100%; border-collapse: collapse;\">\n        <tr>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666; width: 40%;\"><strong>🏭 Máquina:</strong></td>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333; font-weight: bold;\">${maquina.toUpperCase()}</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666;\"><strong>👤 Creada por:</strong></td>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333;\">${creador}</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666;\"><strong>📝 Novedad:</strong></td>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333; font-style: italic;\">${observaciones}</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666;\"><strong>📅 Fecha creación:</strong></td>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333;\">${fechaCreacion}</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #666;\"><strong>📅 Fecha estimada solución:</strong></td>\n          <td style=\"padding: 10px 5px; border-bottom: 1px solid #dee2e6; color: #333;\">${fechaEstimada}</td>\n        </tr>\n        <tr>\n          <td style=\"padding: 10px 5px; color: #666;\"><strong>✅ Fecha de solución:</strong></td>\n          <td style=\"padding: 10px 5px; color: #333;\">${fechaSolucion}</td>\n        </tr>\n      </table>\n    </div>\n    <p style=\"font-size: 14px; color: #777;\">\n      Esta novedad fue atendida y registrada en el historial. Por favor revise si requiere seguimiento adicional.\n    </p>\n  </div>\n  <div style=\"background: #f1f3f5; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;\">\n    <p style=\"font-size: 12px; color: #888; margin: 0;\">\n      🔧 Sistema Automatizado de Gestión de Mantenimiento<br>\n      <span style=\"font-size: 11px;\">Este correo fue generado automáticamente. Por favor no responda a este mensaje.</span>\n    </p>\n  </div>\n</div>\n`;\n\nreturn [{ json: { html, asunto: `✅ Novedad de mantenimiento CERRADA - ${maquina.toUpperCase()}` } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        1280
+      ],
+      "id": "08c1d5b0-69fb-415a-a7f5-59c6e4ac2ca6",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com",
+        "subject": "={{ $json.asunto }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "bccList": "example@example.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        1280
+      ],
+      "id": "0ad102db-05ef-4c18-be6a-7bdb640480fb",
+      "name": "Send a message1",
+      "webhookId": "54b6df90-fbf4-4334-ad7a-0ee75b9547fa",
+      "executeOnce": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Procesar Novedad": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agregar a Historial",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "¿Enviar correo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Enviar correo?": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Procesar Novedad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Eliminar fila cumplida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eliminar fila cumplida": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar a Historial": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "4257b967-b1b4-4023-9026-a56c5cbe195a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "yBp7vrNMTJLoEqMH",
+  "tags": []
+}

@@ -1,0 +1,226 @@
+{
+  "name": "Bot de Mantenimiento Beiplas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "9ef8ba46-f2f6-4d57-b237-926904a1d3cb",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1776663711,
+          "mode": "list",
+          "cachedResultName": "Pendientes Semana",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_NOVEDADES/edit#gid=1776663711"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        208,
+        0
+      ],
+      "id": "efa8fab5-f5f6-4867-99ae-bd4a81a6ed2e",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const filas = $input.all().map(i => i.json);\n\n// Normalizar textos (sin tildes, sin espacios, minúsculas)\nfunction normalizarTexto(valor) {\n  if (valor === null || valor === undefined) return '';\n  return String(valor)\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')   // quitar tildes\n    .replace(/[^\\w\\s]/g, ' ')          // quitar signos\n    .replace(/\\s+/g, '')               // quitar TODOS los espacios\n    .trim()\n    .toLowerCase();\n}\n\nfunction sinDatos(valor) {\n  if (valor === null || valor === undefined || String(valor).trim() === '') {\n    return 'Sin datos';\n  }\n  return String(valor).trim();\n}\n\nfunction determinarArea(maquina) {\n  const m = normalizarTexto(maquina);\n  if (m.includes('selladora') || m.includes('sellado')) return 'selladoras';\n  if (m.includes('extrusora')) return 'extrusoras';\n  if (m.includes('impresora')) return 'impresoras';\n  return 'otras';\n}\n\nconst resultado = {\n  resumen_general: {\n    total_novedades: 0,\n    total_maquinas_unicas: 0,\n    total_responsables_unicos: 0\n  },\n  responsables: {\n    total: 0,\n    detalle: []\n  },\n  areas: {\n    selladoras: { total_novedades: 0, total_maquinas: 0, maquinas: [] },\n    extrusoras:  { total_novedades: 0, total_maquinas: 0, maquinas: [] },\n    impresoras:  { total_novedades: 0, total_maquinas: 0, maquinas: [] },\n    otras:       { total_novedades: 0, total_maquinas: 0, maquinas: [] }\n  }\n};\n\nconst responsablesMap = {};\nconst maquinasGlobal = new Set();\nconst areasTemp = {\n  selladoras: {},\n  extrusoras: {},\n  impresoras: {},\n  otras: {}\n};\n\nfor (const fila of filas) {\n  const maquinaOriginal = sinDatos(fila['PENDIENTE DE LA SEMANA   24  ( 8 -13 JUNIO)']);\n  if (normalizarTexto(maquinaOriginal) === 'maquina') continue;\n\n  const observacion = sinDatos(fila.col_3);\n  const diagnostico = sinDatos(fila.col_5);\n  const responsableOriginal = sinDatos(fila.col_6);\n\n  resultado.resumen_general.total_novedades++;\n  maquinasGlobal.add(normalizarTexto(maquinaOriginal));\n\n  // Responsables\n  if (responsableOriginal !== 'Sin datos') {\n    const keyResp = normalizarTexto(responsableOriginal);\n    if (!responsablesMap[keyResp]) {\n      responsablesMap[keyResp] = { nombre: responsableOriginal, total_novedades: 0 };\n    }\n    responsablesMap[keyResp].total_novedades++;\n  }\n\n  const area = determinarArea(maquinaOriginal);\n  resultado.areas[area].total_novedades++;\n\n  const maquinaKey = normalizarTexto(maquinaOriginal);\n  if (!areasTemp[area][maquinaKey]) {\n    areasTemp[area][maquinaKey] = {\n      maquina: maquinaOriginal,\n      total_novedades: 0,\n      responsables: {},\n      pendientes: []\n    };\n  }\n\n  const maquina = areasTemp[area][maquinaKey];\n  maquina.total_novedades++;\n  maquina.pendientes.push({\n    observacion,\n    diagnostico_solucion: diagnostico,\n    responsable: responsableOriginal\n  });\n\n  if (responsableOriginal !== 'Sin datos') {\n    const r = normalizarTexto(responsableOriginal);\n    if (!maquina.responsables[r]) {\n      maquina.responsables[r] = { nombre: responsableOriginal, cantidad: 0 };\n    }\n    maquina.responsables[r].cantidad++;\n  }\n}\n\n// Convertir áreas temporales a arrays\nfor (const area of Object.keys(areasTemp)) {\n  const maquinas = Object.values(areasTemp[area]);\n  resultado.areas[area].total_maquinas = maquinas.length;\n  resultado.areas[area].maquinas = maquinas.map(m => ({\n    maquina: m.maquina,\n    total_novedades: m.total_novedades,\n    responsables: Object.values(m.responsables).sort((a, b) => b.cantidad - a.cantidad),\n    pendientes: m.pendientes\n  }));\n}\n\n// Responsables globales\nresultado.responsables.detalle = Object.values(responsablesMap)\n  .sort((a, b) => b.total_novedades - a.total_novedades);\nresultado.responsables.total = resultado.responsables.detalle.length;\n\nresultado.resumen_general.total_maquinas_unicas = maquinasGlobal.size;\nresultado.resumen_general.total_responsables_unicos = resultado.responsables.total;\nresultado.resumen_general.responsables_mas_mencionados = resultado.responsables.detalle.slice(0, 5);\n\n// Eliminar la sección \"otras\" si no tiene máquinas\nif (resultado.areas.otras.total_maquinas === 0) {\n  delete resultado.areas.otras;\n}\n\nreturn [{ json: resultado }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "7bad4896-b24d-477b-999b-65902523a214",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres un analista de mantenimiento. Con el siguiente JSON, redacta un resumen ejecutivo en **texto plano** (sin Markdown), orientado a la acción.  \nSigue esta estructura exacta:\n\nRESUMEN GENERAL\nTotal novedades: X | Máquinas afectadas: X | Responsables: X (nombres separados por coma)\n\nPRIORIDADES\n- Si hay novedades que requieren atención urgente, menciónalas aquí con máquina, problema, responsable y solución. Si no hay, escribe \"Sin prioridades urgentes\".\n\nDETALLE POR ÁREA\n\n* Selladoras (X novedades en X máquinas):\n  - Agrupa las novedades por máquina. Ejemplo: \"Máquina A: observación1, observación2. Responsable: X. Solución: Y.\"\n  - Máximo 3 líneas por máquina.\n  - Si hay más de 5 novedades, solo menciona las más relevantes.\n\n* Extrusoras (X novedades en X máquinas):\n  ...\n\n* Impresoras (X novedades en X máquinas):\n  ...\n\n**Reglas estrictas:**\n- NO copies y pegues cada observación. Agrupa, resume y prioriza.\n- Si una máquina tiene varias novedades, júntalas en una sola línea separada por comas.\n- Usa DOBLE salto de línea entre cada sección y UN salto de línea entre cada ítem.\n- Sé breve y directo. Máximo 12 líneas en total (sin contar los títulos).\n- Si un campo está vacío o es \"Sin datos\", escribe \"No especificado\" o \"Pendiente\".\n- Si una sección no tiene datos, escribe \"Sin novedades en esta área\".\n\n**JSON a analizar:**\n{{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        624,
+        0
+      ],
+      "id": "a0d2b3a5-b41e-4500-a637-486b2b125da6",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:7b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        608,
+        192
+      ],
+      "id": "3e75e550-0b49-430d-9397-bc54039f3a5f",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "HGwQerxAlYUt2yUE",
+          "name": "Ollama Kory"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.output || $input.first().json.text || '';\nconst maxTelegram = 4096;\n\n// Asegurar saltos de línea claros y quitar Markdown residual\nconst limpio = raw\n  .replace(/\\*/g, '-')          // cambiar asteriscos por guiones\n  .replace(/\\n{3,}/g, '\\n\\n')   // normalizar saltos múltiples\n  .replace(/^\\s*[-•]\\s/gm, '- ') // unificar viñetas\n  .trim();\n\n// Si excede el límite, truncar con puntos suspensivos\nconst final = limpio.length > maxTelegram\n  ? limpio.substring(0, maxTelegram - 3) + '...'\n  : limpio;\n\nreturn [{ json: { mensaje: final } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        0
+      ],
+      "id": "db99d325-b7f8-4b8d-8ac2-af601dfd5168",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=RESUMEN DE TAREAS EN LA SEMANA ACTUAL\n{{ $json.mensaje }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "500a7799-b2c7-479e-a8f6-5d437ce9c7eb",
+      "name": "Send a text message",
+      "webhookId": "1723240d-9a78-48ee-a579-09130fb71f7e",
+      "credentials": {
+        "telegramApi": {
+          "id": "PBjL8AcZDKhasbZY",
+          "name": "Telegram Bot Mantenimiento"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "America/Bogota",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "9a63c4f4-c13e-4a6a-a71a-1d0f48590d9e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "psZEYc69wt5APbR8",
+  "tags": []
+}

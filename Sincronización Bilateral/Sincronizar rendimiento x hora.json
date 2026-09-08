@@ -1,0 +1,138 @@
+{
+  "name": "Sincronizar rendimiento x hora",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c205bb01-6d97-4bbe-8094-93a5a8c14c10",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_SIMULADOR",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 352795117,
+          "mode": "list",
+          "cachedResultName": "Tiempos maquina",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_SIMULADOR/edit#gid=352795117"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        192,
+        0
+      ],
+      "id": "4381831d-4e83-4a0f-90d1-741f27808848",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(item => item.json);\nconst values = [];\n\nfor (const item of items) {\n  // Selladoras\n  if (item.SELLADO && item.SELLADO.trim() !== '') {\n    const nombre = item.SELLADO.trim();\n    const kgHora = parseFloat(item['HORAS SELLADO']) || 0;\n    values.push(`('${nombre.replace(/'/g, \"''\")}', ${kgHora.toFixed(2)})`);\n  }\n  // Extrusoras\n  if (item.EXTRUSORA && item.EXTRUSORA.trim() !== '') {\n    const nombre = item.EXTRUSORA.trim();\n    const kgHora = parseFloat(item['HORA EXTRUSION']) || 0;\n    values.push(`('${nombre.replace(/'/g, \"''\")}', ${kgHora.toFixed(2)})`);\n  }\n  // Impresoras\n  if (item.IMPRESION && item.IMPRESION.trim() !== '') {\n    const nombre = item.IMPRESION.trim();\n    const kgHora = parseFloat(item['HORA IMPRESION']) || 0;\n    values.push(`('${nombre.replace(/'/g, \"''\")}', ${kgHora.toFixed(2)})`);\n  }\n}\n\nif (values.length === 0) {\n  return [{ json: { sql: '', status: 'sin_datos' } }];\n}\n\nconst sql = `INSERT INTO public.maquinas (nombre, kg_hora)\nVALUES ${values.join(', ')}\nON CONFLICT (nombre) DO UPDATE SET\n  kg_hora = EXCLUDED.kg_hora;`;\n\nreturn [{ json: { sql } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "id": "c37ae18e-b67b-4a46-9a60-454feace366e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        592,
+        0
+      ],
+      "id": "aa81cb16-de62-48f6-a8a5-be2762467912",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b76f2119-f61d-4789-bfb8-cbb162a075dc",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "dRj7EuSiGMY8wszA",
+  "tags": []
+}

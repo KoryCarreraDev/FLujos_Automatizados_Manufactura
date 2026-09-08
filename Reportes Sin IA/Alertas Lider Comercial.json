@@ -1,0 +1,515 @@
+{
+  "name": "Alertas Lider Comercial",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5b3eff0d-c18a-4b7a-a9fa-d6dfbcb517c4",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const comerciales = [\n  { id:\n    \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepita\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepita\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },\n  { id: \"example_id\", hoja: \"Calculador de Precio\", comercial: \"Pepito\" },\n];\nreturn comerciales.map(c => ({ json: c }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "fe560e0d-6d9b-45be-8589-e6bdfea2306f",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "ed5aaa93-cbaa-4fbe-89c9-706a73730372",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.hoja }}"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        864,
+        48
+      ],
+      "id": "5fa9046f-7462-4fc4-ba5c-408df7bdde20",
+      "name": "Get row(s) in sheet",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const pendientes = $input.all().filter(item => \n  item.json['Titulo Referencia'] && item.json['Titulo Referencia'].toString().trim() !== ''\n);\n\nif (pendientes.length === 0) {\n  return [{ json: { mensaje: '', enviar: false } }];\n}\n\n// Colores corporativos\nconst colorPrimario = '#1a365d';   // azul oscuro\nconst colorSecundario = '#2b6cb0'; // azul medio\nconst colorFondo = '#f7fafc';\nconst colorTexto = '#2d3748';\nconst colorBorde = '#e2e8f0';\n\nconst resultados = pendientes.map(item => {\n  const d = item.json;\n  const comercial = d.comercial || 'Desconocido';\n  const ref = d['Titulo Referencia'] || 'Sin ref.';\n  const cliente = d.Cliente || 'N/A';\n  const material = d.Material || '';\n  const medidas = `${d.Ancho || '-'} x ${d.Largo || '-'} x cal.${d.Calibre || '-'}`;\n  const precio = d['Precio Unidad'] ?? 'N/D';\n  const cantidad = d['Cantidad Minima'] ?? 'N/D';\n\n  // Construir HTML\n  const html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n</head>\n<body style=\"margin:0; padding:0; background-color:${colorFondo}; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">\n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:${colorFondo}; padding: 20px 0;\">\n    <tr>\n      <td align=\"center\">\n        <table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);\">\n          <!-- Encabezado -->\n          <tr>\n            <td style=\"background-color:${colorPrimario}; padding: 24px 30px; text-align: center;\">\n              <h1 style=\"color:#ffffff; margin:0; font-size: 22px; font-weight: 600;\">Nueva Cotización Registrada</h1>\n            </td>\n          </tr>\n          <!-- Cuerpo -->\n          <tr>\n            <td style=\"padding: 30px 30px 20px 30px;\">\n              <p style=\"margin:0 0 16px 0; font-size: 16px; color:${colorTexto}; line-height: 1.5;\">\n                El comercial <strong style=\"color:${colorSecundario};\">${comercial}</strong> ha registrado una nueva cotización:\n              </p>\n              \n              <!-- Tabla de detalles -->\n              <table width=\"100%\" cellpadding=\"8\" cellspacing=\"0\" style=\"border-collapse: collapse; margin-bottom: 20px;\">\n                <tr>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorPrimario}; font-weight:600; width:35%;\">📌 Referencia</td>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorTexto};\">${ref} (Cliente: ${cliente})</td>\n                </tr>\n                <tr>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorPrimario}; font-weight:600;\">• Material</td>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorTexto};\">${material}</td>\n                </tr>\n                <tr>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorPrimario}; font-weight:600;\">• Medidas</td>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorTexto};\">${medidas}</td>\n                </tr>\n                <tr>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorPrimario}; font-weight:600;\">• Precio Unidad</td>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorTexto}; font-weight: 600;\">$${precio}</td>\n                </tr>\n                <tr>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorPrimario}; font-weight:600;\">• Cantidad Mínima</td>\n                  <td style=\"border-bottom:1px solid ${colorBorde}; color:${colorTexto};\">${cantidad} unidades</td>\n                </tr>\n              </table>\n              \n              <p style=\"margin:0 0 16px 0; font-size: 14px; color:#718096;\">\n                Por favor revise en caso de alguna duda o inquietud.\n              </p>\n            </td>\n          </tr>\n          <!-- Pie -->\n          <tr>\n            <td style=\"background-color:${colorFondo}; padding: 16px 30px; text-align: center; border-top: 1px solid ${colorBorde};\">\n              <p style=\"margin:0; font-size: 12px; color:#a0aec0;\">\n                Este mensaje fue generado automáticamente por el sistema de cotizaciones de <strong>Beiplas</strong>.<br>\n                Si tiene alguna duda, contacte al administrador.\n              </p>\n            </td>\n          </tr>\n        </table>\n      </td>\n    </tr>\n  </table>\n</body>\n</html>`;\n\n  return {\n    json: {\n      mensaje: html,\n      comercial,\n      documento_id: d.documento_id,\n      row_number: d.row_number,\n      _notificar: true\n    }\n  };\n});\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        -16
+      ],
+      "id": "3f652f06-9375-497e-8f51-f0f58fc66484",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "319590ee-8dda-4978-80d4-66fda4353ea8",
+              "leftValue": "={{ $json._notificar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        656,
+        0
+      ],
+      "id": "daf94d55-fef7-473e-88e1-9b55464b8840",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const loopItem = $('Loop Over Items').item.json;\nconst comercial = loopItem?.comercial || 'Desconocido';\nconst documentoId = loopItem?.id || '';\n\n// Campos obligatorios para considerar una cotización completa\nconst camposObligatorios = ['Titulo Referencia', 'Material', 'Ancho', 'Largo', 'Calibre'];\n\nconst resultados = $input.all().map(item => {\n  const data = { ...item.json };\n  const informada = data['Informada (Automatico)']\n    ? data['Informada (Automatico)'].toString().trim().toUpperCase()\n    : '';\n\n  // Verificar completitud\n  const completa = camposObligatorios.every(campo =>\n    data[campo] !== undefined && data[campo] !== null && String(data[campo]).trim() !== ''\n  );\n\n  // Solo se notifica si NO está informada y está completa\n  const notificar = informada !== 'SI' && completa;\n\n  return {\n    json: {\n      ...data,\n      comercial: comercial,\n      documento_id: documentoId,\n      _notificar: notificar\n    }\n  };\n});\n\n// Si no hay ningún resultado (hoja vacía), devolvemos marcador para que el flujo no se detenga\nif (resultados.length === 0) {\n  return [{ json: { _notificar: false, comercial, documento_id: documentoId } }];\n}\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        112
+      ],
+      "id": "f3385253-f6e2-4163-9def-68dd1ee66dd6",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1360,
+        -144
+      ],
+      "id": "00136c13-a29e-419a-8aa1-767802102814",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com",
+        "subject": "=Nueva Cotización de Comercial: {{ $('Code in JavaScript2').item.json.comercial }}",
+        "message": "={{ $('Code in JavaScript2').item.json.mensaje }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1888,
+        -160
+      ],
+      "id": "824685fe-ea2a-432f-bd07-47d9f3563fc7",
+      "name": "Send a message",
+      "webhookId": "b72739d7-ab42-4ae3-b733-af7ea61169bd",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.documento_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Calculador de Precio",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_CALCULADOR_LIDER/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "Informada (Automatico)": "SI"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Titulo Referencia",
+              "displayName": "Titulo Referencia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cliente",
+              "displayName": "Cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Recuperado / Original",
+              "displayName": "Recuperado / Original",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Material",
+              "displayName": "Material",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Aditivo",
+              "displayName": "Aditivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cinta Seguridad",
+              "displayName": "Cinta Seguridad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cinta resellable",
+              "displayName": "Cinta resellable",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tintas",
+              "displayName": "Tintas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Troquelado",
+              "displayName": "Troquelado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Ancho",
+              "displayName": "Ancho",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Largo",
+              "displayName": "Largo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Calibre",
+              "displayName": "Calibre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Precio Unidad",
+              "displayName": "Precio Unidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cantidad Minima",
+              "displayName": "Cantidad Minima",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Informada (Automatico)",
+              "displayName": "Informada (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1552,
+        -48
+      ],
+      "id": "d32c0fe9-c41c-4269-b543-c153a98337da",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0245c1e1-6bcc-466a-bfb2-0749c062d9ae",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "1OxjrBVAGxQU9Ok3",
+  "tags": []
+}

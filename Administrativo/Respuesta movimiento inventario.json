@@ -1,0 +1,296 @@
+{
+  "name": "Respuesta movimiento inventario",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "a1006a9c-f133-4caa-83fe-4e1f605ff60a",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -736,
+        -208
+      ],
+      "id": "1ca623fe-a0e1-418d-ab9a-f88df5498ce5",
+      "name": "Webhook",
+      "webhookId": "a1006a9c-f133-4caa-83fe-4e1f605ff60a"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.item.json.query || {};\nconst rowNumber = query.row_number;\nconst action = query.action;\n\nif (!rowNumber || !action) {\n  throw new Error('Faltan parámetros: row_number o action');\n}\n\nreturn {\n  row_number: parseInt(rowNumber, 10),\n  action: action\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        -208
+      ],
+      "id": "e7a2fa2b-1c64-423f-94f2-9d990fa80974",
+      "name": "Procesar parámetros"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1049068235,
+          "mode": "list",
+          "cachedResultName": "Solicitudes de Movimiento"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -352,
+        -208
+      ],
+      "id": "429f824d-ff20-4554-becc-64daa5ec500c",
+      "name": "Leer toda la hoja",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const filas = $input.all().map(i => i.json);\nconst rowNumber = $('Procesar parámetros').first().json.row_number;\n\nconst fila = filas.find(f => f.row_number == rowNumber);\n\nif (!fila) {\n  throw new Error(`No se encontró la fila con row_number=${rowNumber}`);\n}\n\nreturn {\n  ...fila,\n  row_number: rowNumber,\n  action: $('Procesar parámetros').first().json.action\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -208
+      ],
+      "id": "f14741f7-d334-4007-9e34-4fd300acf4d7",
+      "name": "Buscar fila por row_number"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst action = data.action;\nconst rowNumber = data.row_number;\n\n// Inyectar el valor de Respuesta al movimiento (antes de armar el correo)\ndata['Respuesta al movimiento'] = action === 'accept' ? 'Aceptado' : 'Rechazado';\n\nconst isAccepted = action === 'accept';\nconst estado = isAccepted ? 'Aceptado' : 'Rechazado';\nconst subject = isAccepted ? '✅ Solicitud de movimiento ACEPTADA' : '❌ Solicitud de movimiento RECHAZADA';\n\nlet body = `La siguiente solicitud ha sido <strong>${estado}</strong>:<br><br>`;\nbody += '<table>';\nfor (const [clave, valor] of Object.entries(data)) {\n  if (['action', 'row_number', 'email'].includes(clave)) continue;\n  body += `<tr><td><strong>${clave}</strong></td><td>${valor ?? ''}</td></tr>`;\n}\nbody += '</table>';\n\nreturn [{\n  json: {\n    ...data,\n    action: action,\n    row_number: rowNumber,\n    email: {\n      to: 'example@example.com',\n      subject: subject,\n      body: body\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        -208
+      ],
+      "id": "97e43220-2830-457c-b2cc-4c32abfb1c2b",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Respuesta registrada</title>\n  <style>\n    * { margin: 0; padding: 0; box-sizing: border-box; }\n    body {\n      font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;\n      background: linear-gradient(135deg, #f5f7fa 0%, #e9edf5 100%);\n      min-height: 100vh;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 20px;\n    }\n    .container {\n      max-width: 480px;\n      width: 100%;\n      background: #ffffff;\n      border-radius: 24px;\n      padding: 40px 30px;\n      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.10), 0 8px 20px rgba(0, 0, 0, 0.06);\n      text-align: center;\n      transition: all 0.2s ease;\n    }\n    .icono {\n      font-size: 64px;\n      line-height: 1;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-size: 28px;\n      font-weight: 700;\n      margin-bottom: 12px;\n      letter-spacing: -0.3px;\n    }\n    .aceptado { color: #0a7e3c; }\n    .rechazado { color: #b91c1c; }\n    .mensaje {\n      font-size: 18px;\n      color: #2d3748;\n      margin-bottom: 8px;\n    }\n    .detalle {\n      font-size: 15px;\n      color: #4a5568;\n      background: #f7fafc;\n      border-radius: 12px;\n      padding: 14px 20px;\n      margin: 20px 0 8px;\n      display: inline-block;\n      border: 1px solid #e2e8f0;\n    }\n    .footer {\n      margin-top: 28px;\n      font-size: 13px;\n      color: #a0aec0;\n      border-top: 1px solid #edf2f7;\n      padding-top: 20px;\n    }\n    .btn-cerrar {\n      display: inline-block;\n      margin-top: 16px;\n      padding: 10px 28px;\n      background: #2b6cb0;\n      color: #fff;\n      font-weight: 600;\n      border-radius: 40px;\n      text-decoration: none;\n      font-size: 15px;\n      transition: background 0.2s;\n      border: none;\n      cursor: pointer;\n    }\n    .btn-cerrar:hover {\n      background: #1a4f7a;\n    }\n    @media (max-width: 480px) {\n      .container { padding: 30px 20px; }\n      h1 { font-size: 24px; }\n      .icono { font-size: 52px; }\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"icono\">\n      {{ $json.action === 'accept' ? '✅' : '❌' }}\n    </div>\n\n    <h1 class=\"{{ $json.action === 'accept' ? 'aceptado' : 'rechazado' }}\">\n      {{ $json.action === 'accept' ? 'Solicitud ACEPTADA' : 'Solicitud RECHAZADA' }}\n    </h1>\n\n    <p class=\"mensaje\">\n      {{ $json.action === 'accept' \n        ? 'El movimiento ha sido aprobado correctamente.' \n        : 'El movimiento ha sido rechazado.' }}\n    </p>\n\n    <div class=\"detalle\">\n      📋 Nº de solicitud: <strong>{{ $json.row_number || '—' }}</strong>\n    </div>\n\n    <button class=\"btn-cerrar\" onclick=\"window.close()\">\n      Cerrar esta ventana\n    </button>\n\n    <div class=\"footer\">\n      Sistema de Gestión de Inventario &bull; Respuesta registrada\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        -336
+      ],
+      "id": "19cec057-f0fd-4bd1-b41b-b87475db534f",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email.to }}",
+        "subject": "={{ $json.email.subject }}",
+        "message": "={{ $json.email.body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        288,
+        -208
+      ],
+      "id": "f6f2d1d3-636a-4948-82ce-830ecaef3b0b",
+      "name": "Send a message",
+      "webhookId": "24c07a0a-ed03-4359-863a-b3fa96c197c1",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1049068235,
+          "mode": "list",
+          "cachedResultName": "Solicitudes de Movimiento"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Respuesta al movimiento": "={{ $json.action === 'accept' ? 'Aceptado' : 'Rechazado' }}",
+            "row_number": "={{ $json.row_number }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Marca temporal",
+              "displayName": "Marca temporal",
+              "type": "string"
+            },
+            {
+              "id": "Material solicitado",
+              "displayName": "Material solicitado",
+              "type": "string"
+            },
+            {
+              "id": "Cantidad del movimiento (Solo numeros)",
+              "displayName": "Cantidad del movimiento (Solo numeros)",
+              "type": "string"
+            },
+            {
+              "id": "Informada",
+              "displayName": "Informada",
+              "type": "string"
+            },
+            {
+              "id": "Respuesta al movimiento",
+              "displayName": "Respuesta al movimiento",
+              "type": "string"
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "type": "number",
+              "readOnly": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        288,
+        -48
+      ],
+      "id": "41d7e92e-7bef-4858-9532-ebcda2b720de",
+      "name": "Actualizar hoja de cálculo",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Procesar parámetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar parámetros": {
+      "main": [
+        [
+          {
+            "node": "Leer toda la hoja",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer toda la hoja": {
+      "main": [
+        [
+          {
+            "node": "Buscar fila por row_number",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar fila por row_number": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Actualizar hoja de cálculo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "60a1a309-aa36-4018-96d7-00d45d4b1e3d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "iNVJSwtFAouy1JNQ",
+  "tags": []
+}

@@ -1,0 +1,431 @@
+{
+  "name": "Consolidado Mantenimiento",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const hojas = [];\nfor (let i = 1; i <= 9; i++) hojas.push({ hoja: `Selladora ${i}` });\nfor (let i = 1; i <= 9; i++) hojas.push({ hoja: `Extrusora ${i}` });\nhojas.push({ hoja: \"Impresora 1\" });\nhojas.push({ hoja: \"Impresora 2\" });\nhojas.push({ hoja: \"Troqueladora 1\" });\nhojas.push({ hoja: \"Troqueladora 2\" });\nreturn hojas.map(item => ({ json: item }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        144
+      ],
+      "id": "d0f6d36f-1e04-487c-8894-681b7a706550",
+      "name": "Lista hojas preventivas"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        352,
+        0
+      ],
+      "id": "2389d503-a266-4ecc-a436-3a4f36142e5e",
+      "name": "Loop Over Items (hojas preventivas)"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.hoja }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        640,
+        192
+      ],
+      "id": "f8fafc73-ceb6-4edd-90bd-8d278922aef0",
+      "name": "Leer hoja preventiva",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const hoja = $('Loop Over Items (hojas preventivas)').item.json.hoja;\nconst filas = $input.all();\nif (filas.length === 0) return [];\n\nfunction normalizarClave(str) {\n  return str.trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/['´`]/g, '').replace(/\\s+/g, '');\n}\n\nconst mapeo = {\n  'tareas/procesos': 'tareas',\n  'ultimarevision': 'ultimaRevision',\n  'frecuencia(dias)': 'frecuenciaDias',\n  'semaforo': 'semaforo',\n  'estado(pendiente/cumplida)': 'estado',\n  'nombreresponsable/s': 'responsable',\n  'ultimasobservaciones': 'observaciones',\n  'rownumber': 'row_number'\n};\n\nreturn filas.map(item => {\n  const raw = item.json;\n  const normalizado = {};\n  if (raw.row_number !== undefined) normalizado.row_number = raw.row_number;\n  for (const key of Object.keys(raw)) {\n    const claveNorm = normalizarClave(key);\n    const estandar = mapeo[claveNorm];\n    normalizado[estandar || key] = raw[key];\n  }\n  normalizado.hoja = hoja;\n  normalizado.tipoTarea = 'Preventiva';\n  return { json: normalizado };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        288
+      ],
+      "id": "900a71c3-855e-4b01-9734-2001bf93b11f",
+      "name": "Normalizar preventiva"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 864152737,
+          "mode": "list",
+          "cachedResultName": "Novedades"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        496,
+        464
+      ],
+      "id": "b0a21139-108f-4893-8ce1-e2ebc7f0dfb7",
+      "name": "Leer novedades",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    hoja: 'Novedades',\n    maquina: item.json['Maquina'] || '',\n    tipoTarea: 'Correctiva',\n    tareas: item.json['Observaciones respecto a la novedad (Obligatorio)'] || '',\n    estado: item.json['Estado (Solo Mantenimiento)'] || '',\n    semaforo: item.json['Semaforo (automatico)'] || '',\n    frecuenciaDias: '',\n    ultimaRevision: '',\n    responsable: item.json['Quien creó la novedad (Solo nombre)'] || '',\n    observaciones: item.json['Observaciones respecto a la novedad (Obligatorio)'] || '',\n    fechaEstimada: item.json['Fecha estimada de solución (Solo Mantenimiento)'] || '',\n    fechaCreacion: item.json['Fecha de creacion (automatico)'] || ''\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        464
+      ],
+      "id": "9d81487a-4434-4760-adfa-49c0a2dd9fd3",
+      "name": "Normalizar novedades"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        272
+      ],
+      "id": "8232d691-024d-4b4f-95f4-a14fed44ec74",
+      "name": "Merge preventivas + novedades"
+    },
+    {
+      "parameters": {
+        "jsCode": "const hoy = new Date();\nhoy.setHours(0, 0, 0, 0);\n\nfunction norm(str) {\n  return String(str || '')\n    .trim()\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '');\n}\n\nconst consolidado = [];\n\nfor (const item of $input.all()) {\n  const d = item.json;\n  const tipo = d.tipoTarea;\n  const estadoRaw = d.estado;\n  const estado = norm(estadoRaw);\n  const semaforo = d.semaforo || '';\n\n  // Calcular Vencida solo si está pendiente\n  let vencida = 'Pendientes';\n  if (estado === 'pendiente') {\n    if (tipo === 'Preventiva') {\n      const fechaStr = d.ultimaRevision;\n      const frec = parseInt(d.frecuenciaDias, 10);\n      if (fechaStr && !isNaN(frec)) {\n        const partes = fechaStr.split('/');\n        if (partes.length === 3) {\n          const fechaRev = new Date(partes[2], partes[1] - 1, partes[0]);\n          if (!isNaN(fechaRev.getTime())) {\n            fechaRev.setDate(fechaRev.getDate() + frec);\n            if (fechaRev <= hoy) vencida = 'Sí';\n          }\n        }\n      }\n    } else if (tipo === 'Correctiva') {\n      const fechaEstStr = d.fechaEstimada;\n      if (fechaEstStr) {\n        const partes = fechaEstStr.split('/');\n        if (partes.length === 3) {\n          const fechaEst = new Date(partes[2], partes[1] - 1, partes[0]);\n          if (!isNaN(fechaEst.getTime()) && fechaEst < hoy) vencida = 'Vencida';\n        }\n      }\n    }\n  }\n\n  // Insertar siempre (sin filtrar)\n  consolidado.push({\n    maquina: d.hoja || d.maquina || '',\n    tipoTarea: tipo || '',\n    tarea: d.tareas || '',\n    estado: estadoRaw || '',                // guardamos el valor original\n    semaforo: semaforo,\n    responsable: d.responsable || '',\n    frecuencia: d.frecuenciaDias || '',\n    ultimaRevision: d.ultimaRevision || '',\n    vencida: vencida,\n    fechaCreacion: d.fechaCreacion || '',\n    fechaEstimada: d.fechaEstimada || '',\n    observaciones: d.observaciones || ''\n  });\n}\n\nreturn consolidado.map(c => ({ json: c }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        272
+      ],
+      "id": "1d54f763-2627-4c7b-8d9c-43dd9cbde172",
+      "name": "Consolidar datos"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1437426666,
+          "mode": "list",
+          "cachedResultName": "Consolidado",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_NOVEDADES/edit#gid=1437426666"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Maquina": "={{ $json.maquina }}",
+            "Tipo Tarera": "={{ $json.tipoTarea }}",
+            "Tareas / Procesos": "={{ $json.tarea }}",
+            "Estado (Pendiente / Cumplida)": "={{ $json.estado }}",
+            "Semaforo": "={{ $json.semaforo }}",
+            "Frecuencia (Días)": "={{ $json.frecuencia }}",
+            "Ultima Revisión": "={{ $json.ultimaRevision }}",
+            "Vencida": "={{ $json.vencida }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Maquina",
+              "displayName": "Maquina",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tipo Tarera",
+              "displayName": "Tipo Tarera",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tareas / Procesos",
+              "displayName": "Tareas / Procesos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Estado (Pendiente / Cumplida)",
+              "displayName": "Estado (Pendiente / Cumplida)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Semaforo",
+              "displayName": "Semaforo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Frecuencia (Días)",
+              "displayName": "Frecuencia (Días)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ultima Revisión",
+              "displayName": "Ultima Revisión",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vencida",
+              "displayName": "Vencida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1584,
+        272
+      ],
+      "id": "3e530088-313b-4026-88d1-2ea288257793",
+      "name": "Escribir consolidado",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -320,
+        464
+      ],
+      "id": "5bfdc325-85e4-46a5-8e12-bee30ed77821",
+      "name": "Schedule Trigger 8am"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        96
+      ],
+      "id": "ec03bfdc-4e17-41ec-817b-2aff7447ffcc",
+      "name": "Wait",
+      "webhookId": "2bacf868-29ee-487a-a31a-bbed6fc02467"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lista hojas preventivas": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items (hojas preventivas)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items (hojas preventivas)": {
+      "main": [
+        [
+          {
+            "node": "Merge preventivas + novedades",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer hoja preventiva": {
+      "main": [
+        [
+          {
+            "node": "Normalizar preventiva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar preventiva": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items (hojas preventivas)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer novedades": {
+      "main": [
+        [
+          {
+            "node": "Normalizar novedades",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar novedades": {
+      "main": [
+        [
+          {
+            "node": "Merge preventivas + novedades",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge preventivas + novedades": {
+      "main": [
+        [
+          {
+            "node": "Consolidar datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar datos": {
+      "main": [
+        [
+          {
+            "node": "Escribir consolidado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger 8am": {
+      "main": [
+        [
+          {
+            "node": "Lista hojas preventivas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Leer novedades",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Leer hoja preventiva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c0703ebc-02d2-474f-b385-554e9c7f96ef",
+  "meta": {
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "zWSA7YrNm1zVhsf2",
+  "tags": []
+}

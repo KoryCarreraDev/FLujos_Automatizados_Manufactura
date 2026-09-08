@@ -1,0 +1,491 @@
+{
+  "name": "Informe diario de entrega de turnos",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 8,14,21 * * *"
+            }
+          ]
+        }
+      },
+      "id": "d5e3564c-525c-42ea-b2b8-a102d72e19a9",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        2672,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  { json: { hoja: 'Turnos Sellado', area: 'Sellado' } },\n  { json: { hoja: 'Turnos Extrusión', area: 'Extrusión' } },\n  { json: { hoja: 'Turnos Impresión', area: 'Impresión' } }\n];"
+      },
+      "id": "86227ce0-4fd8-4fa2-baf3-a776fa584877",
+      "name": "Lista de áreas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "d98dd2ff-3922-4adc-ac94-e25a1e6a8807",
+      "name": "Por cada área",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        3184,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_TURNOS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.hoja }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "41fa7da5-84cb-4b07-8422-194486bf240c",
+      "name": "Leer hoja del área",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3328,
+        256
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obtener el nombre del área desde el elemento actual del bucle\nconst area = $('Por cada área').item.json.area;\n\n// Construir un array de filas con las 5 columnas reales\nconst rows = $input.all().map(item => {\n  const obj = item.json;\n  return [\n    obj[\"OT's a Realizar\"] || '',\n    obj.col_2 || '',\n    obj.col_3 || '',\n    obj.col_4 || '',\n    obj.col_5 || ''\n  ];\n});\n\nfunction getCell(row, colIndex) {\n  return row[colIndex] ? row[colIndex].toString().trim() : '';\n}\n\nconst data = {\n  area: area,\n  ots: [],\n  estado_maquinas: [],\n  maquinas_habilitadas: [],\n  maquinas_no_habilitadas: [],\n  actividad_operarios: [],\n  actividades_supervisores: [],\n  novedades: [],\n  prioridades_generales: ''\n};\n\nlet currentSection = '';\n\nfor (let i = 0; i < rows.length; i++) {\n  const row = rows[i];\n  const a = getCell(row, 0);\n  const b = getCell(row, 1);\n  const c = getCell(row, 2);\n  const d = getCell(row, 3);\n  const e = getCell(row, 4);\n\n  // Detectar secciones por el texto en la columna A\n  if (a === 'Estado de las maquinas') {\n    currentSection = 'estado_maquinas';\n    i++; // saltar encabezados\n    continue;\n  }\n  if (a === 'Maquinas Habilitadas') {\n    currentSection = 'maquinas_habilitadas';\n    i++;\n    continue;\n  }\n  if (a === 'Maquinas No Habilitadas') {\n    currentSection = 'maquinas_no_habilitadas';\n    i++;\n    continue;\n  }\n  if (a === 'Actividad de los operarios') {\n    currentSection = 'actividad_operarios';\n    i++;\n    continue;\n  }\n  if (a === 'Actividad de los Supervisores') {\n    currentSection = 'actividades_supervisores';\n    i++;\n    continue;\n  }\n  if (a === 'Observaciones Adicionales') {\n    currentSection = 'novedades';\n    i++; // saltar la fila de \"Fecha y Hora | Novedad\"\n    continue;\n  }\n\n  // Procesar filas según la sección actual\n  if (currentSection === 'estado_maquinas') {\n    // A = número de máquina, B = ¿trabaja?, C = estado, D = trabajo pendiente\n    if (a && !isNaN(a)) {\n      data.estado_maquinas.push({\n        maquina: a,\n        trabaja: b,\n        estado: c,\n        pendiente: d\n      });\n    }\n  } else if (currentSection === 'maquinas_habilitadas') {\n    if (a && !isNaN(a)) {\n      data.maquinas_habilitadas.push({\n        maquina: a,\n        operario: b,\n        tarea: c,\n        inicio: d,\n        final_estimado: e\n      });\n    }\n  } else if (currentSection === 'maquinas_no_habilitadas') {\n    if (a && !isNaN(a)) {\n      data.maquinas_no_habilitadas.push({\n        maquina: a,\n        motivo: b,\n        reportada: c,\n        tiempo_estimado: d,\n        observaciones: e\n      });\n    }\n  } else if (currentSection === 'actividad_operarios') {\n    if (a && isNaN(a)) {\n      data.actividad_operarios.push({\n        nombre: a,\n        maquina_area: b,\n        actividad_asignada: c,\n        ot_relacionada: d,\n        observaciones: e\n      });\n    }\n  } else if (currentSection === 'actividades_supervisores') {\n    if (a && isNaN(a)) {\n      data.actividades_supervisores.push({\n        nombre: a,\n        maquina_area: b,\n        actividad: c,\n        estado: d,\n        observaciones: e\n      });\n    }\n  } else if (currentSection === 'novedades') {\n    // A = fecha/hora, B = novedad\n    if (a || b) {\n      data.novedades.push({\n        fecha_hora: a,\n        novedad: b\n      });\n    }\n  }\n}\n\nreturn [{ json: data }];"
+      },
+      "id": "f9f9f60e-4421-4a72-ba4f-f483596520f8",
+      "name": "Procesar datos del área",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3536,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "f237de04-97f6-4f62-9f75-964892138f6c",
+      "name": "Unir resultados de áreas",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        3680,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const areas = $input.all().map(item => item.json);\nreturn [{ json: { areas } }];"
+      },
+      "id": "7bd713a6-0069-4721-b0d9-5986decdd6b6",
+      "name": "Preparar datos para IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3872,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Actúa como supervisor de producción de planta. Redacta un resumen ejecutivo breve, humano y profesional, como si hubiera sido escrito por una persona que revisó el turno y sabe qué pasó. Usa únicamente los datos del JSON. No inventes, no completes vacíos y no asumas nada.\n\nReglas obligatorias:\n\n* Si no hay datos reales de un área, escribe exactamente: \"No se ha deligenciado el reporte o no hay novedades, por favor verificar\".\n* Si el JSON completo no trae información útil, responde solo: \"No se recibió información de producción para procesar en este turno\".\n* No menciones cifras, tiempos, cantidades o estados si no aparecen de forma explícita en el JSON.\n* No uses lenguaje robótico ni frases repetidas como \"se observa\", \"es importante mencionar\" o \"según los datos\".\n* Escribe en español natural, directo y ejecutivo, con tono de supervisor real.\n* No uses Markdown, listas ni viñetas. Solo texto plano.\n* Entrega un párrafo por área y un párrafo final de prioridades generales.\n* Si un área tiene información parcial, resume solo lo que sí esté explícito.\n* Si hay novedades, riesgos o pendientes, ponlos de forma clara y concreta.\n* En el cierre, deja solo las prioridades reales del turno, sin adornos.\n\nCómo escribir cada párrafo de área:\n\n1. Indica cómo estuvo el área en términos operativos.\n2. Resume máquinas habilitadas, máquinas con novedad y OTs relacionadas, solo si existen.\n3. Menciona operarios y horarios solo si están en el JSON.\n4. Cierra con la novedad o punto de atención más relevante, si aplica.\n\nPrioridades generales:\nResume únicamente los pendientes, bloqueos o riesgos más importantes del turno, con lenguaje natural y breve.\n\nDatos a analizar:\n{{ JSON.stringify($json.areas) }}\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        4080,
+        128
+      ],
+      "id": "0f61dcc4-3e77-4c27-b72f-a623186afac2",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. LEER TODOS LOS ÍTEMS ENTRANTES (No solo el primero)\nconst items = $input.all();\n\n// El resumen ejecutivo de la IA normalmente viene en el primer ítem\nlet resumen = items[0].json.output || '';\n\n// Limpiar el Markdown básico del resumen ejecutivo\nresumen = resumen\n  .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')  // Convierte **negrita**\n  .replace(/^\\s*-\\s*(.*)$/gm, '• $1')                // Convierte guiones en viñetas\n  .replace(/\\n/g, '<br>');                            // Convierte saltos de línea\n\n// 2. RECOPILAR TODAS LAS ÁREAS DINÁMICAMENTE\nlet areas = [];\nfor (const item of items) {\n  // Caso A: Si el JSON viene con un array interno llamado \"areas\"\n  if (item.json.areas && Array.isArray(item.json.areas)) {\n    areas.push(...item.json.areas);\n  } \n  // Caso B: Si cada ítem de n8n es directamente un área (ej: { \"area\": \"Extrusión\", ... })\n  else if (item.json.area) {\n    areas.push(item.json);\n  }\n}\n\n// 3. GENERAR EL HTML OPTIMIZADO PARA CORREO ELECTRÓNICO\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Informe Diario de Producción</title>\n</head>\n<body style=\"margin:0; padding:0; background-color: #f4f7fa; font-family: Arial, Helvetica, sans-serif;\">\n  \n  <!-- Contenedor principal -->\n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color: #f4f7fa; padding: 20px 0;\">\n    <tr>\n      <td align=\"center\">\n        <table width=\"650\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);\">\n          \n          <!-- Encabezado -->\n          <tr>\n            <td style=\"background: linear-gradient(135deg, #003366, #0056b3); padding: 30px; text-align: center;\">\n              <h1 style=\"color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 0.5px;\">Informe Diario de Producción</h1>\n              <p style=\"color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 14px;\">\n                ${new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n              </p>\n            </td>\n          </tr>\n          \n          <!-- Resumen Ejecutivo -->\n          <tr>\n            <td style=\"padding: 30px;\">\n              <h2 style=\"color: #003366; margin: 0 0 15px 0; font-size: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;\">📋 Resumen Ejecutivo</h2>\n              <div style=\"background-color: #e8f4f8; border-left: 5px solid #0056b3; padding: 15px 20px; border-radius: 4px; font-size: 14px; line-height: 1.6; color: #333;\">\n                ${resumen || 'No se generó resumen ejecutivo para este turno.'}\n              </div>\n            </td>\n          </tr>\n          \n          <!-- Áreas -->\n          <tr>\n            <td style=\"padding: 0 30px 30px 30px;\">\n              ${areas.map(area => {\n                // Filtrar filas vacías\n                const estadoMaquinasValidas = (area.estado_maquinas || []).filter(m => m.trabaja || m.estado || m.pendiente);\n                const maquinasHabilitadasValidas = (area.maquinas_habilitadas || []).filter(m => m.operario || m.tarea || m.inicio || m.final_estimado);\n                const novedadesValidas = (area.novedades || []).filter(n => n.novedad);\n\n                if (!estadoMaquinasValidas.length && !maquinasHabilitadasValidas.length && !novedadesValidas.length) {\n                  return `\n                    <h2 style=\"color: #0056b3; font-size: 18px; margin-top: 30px; border-bottom: 1px solid #e0e0e0; padding-bottom: 5px;\">🏭 Área: ${area.area}</h2>\n                    <p style=\"color: #777; font-style: italic; font-size: 14px;\">No se registraron movimientos ni novedades en esta área durante el turno.</p>\n                  `;\n                }\n\n                return `\n                  <h2 style=\"color: #0056b3; font-size: 18px; margin-top: 30px; border-bottom: 1px solid #e0e0e0; padding-bottom: 5px;\">🏭 Área: ${area.area}</h2>\n                  \n                  ${estadoMaquinasValidas.length ? `\n                    <h3 style=\"color: #333; font-size: 16px; margin: 20px 0 5px 0;\">🔧 Estado de Máquinas</h3>\n                    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse: collapse; margin-bottom: 20px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden;\">\n                      <thead>\n                        <tr style=\"background-color: #f5f7fa;\">\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">Máquina</th>\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">¿Trabaja?</th>\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">Estado</th>\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">Pendiente</th>\n                        </tr>\n                      </thead>\n                      <tbody>\n                        ${estadoMaquinasValidas.map(m => `\n                          <tr>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\"><strong>${m.maquina || ''}</strong></td>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\">${m.trabaja || ''}</td>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\">${m.estado || ''}</td>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\">${m.pendiente || ''}</td>\n                          </tr>\n                        `).join('')}\n                      </tbody>\n                    </table>\n                  ` : ''}\n\n                  ${maquinasHabilitadasValidas.length ? `\n                    <h3 style=\"color: #333; font-size: 16px; margin: 20px 0 5px 0;\">⚙️ Máquinas Habilitadas</h3>\n                    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse: collapse; margin-bottom: 20px; font-size: 14px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden;\">\n                      <thead>\n                        <tr style=\"background-color: #f5f7fa;\">\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">Máquina</th>\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">Operario</th>\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">Tarea</th>\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">Inicio</th>\n                          <th style=\"padding: 10px; border-bottom: 2px solid #ddd; text-align: left; color: #555;\">Fin Estimado</th>\n                        </tr>\n                      </thead>\n                      <tbody>\n                        ${maquinasHabilitadasValidas.map(m => `\n                          <tr>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\"><strong>${m.maquina || ''}</strong></td>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\">${m.operario || ''}</td>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\">${m.tarea || ''}</td>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\">${m.inicio || ''}</td>\n                            <td style=\"padding: 8px 10px; border-bottom: 1px solid #eee;\">${m.final_estimado || ''}</td>\n                          </tr>\n                        `).join('')}\n                      </tbody>\n                    </table>\n                  ` : ''}\n\n                  ${novedadesValidas.length ? `\n                    <h3 style=\"color: #c0392b; font-size: 16px; margin: 20px 0 5px 0;\">🚨 Novedades del Turno</h3>\n                    <ul style=\"background-color: #fdf2f2; border-left: 5px solid #e74c3c; padding: 15px 15px 15px 35px; border-radius: 4px; margin: 10px 0; font-size: 14px; color: #c0392b; line-height: 1.6;\">\n                      ${novedadesValidas.map(n => `\n                        <li style=\"margin-bottom: 8px;\"><strong>${n.fecha_hora || ''}:</strong> ${n.novedad || ''}</li>\n                      `).join('')}\n                    </ul>\n                  ` : ''}\n                `;\n              }).join('')}\n            </td>\n          </tr>\n          \n          <!-- Pie de página -->\n          <tr>\n            <td style=\"background-color: #f0f2f5; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;\">\n              <p style=\"font-size: 12px; color: #888; margin: 0;\">\n                🔧 Sistema Automatizado de Gestión de Producción<br>\n                <span style=\"font-size: 11px;\">Este correo fue generado automáticamente. Por favor no responda a este mensaje.</span>\n              </p>\n            </td>\n          </tr>\n          \n        </table>\n      </td>\n    </tr>\n  </table>\n\n</body>\n</html>\n`;\n\nreturn [{ json: { html } }];"
+      },
+      "id": "066bb2b6-4673-4ea3-a77a-210b0b26e9e6",
+      "name": "Construir HTML del PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4480,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com, example@example.com, example@example.com",
+        "subject": "=Informe Diario de Producción - {{ new Date().toLocaleDateString() }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "reporte"
+              }
+            ]
+          },
+          "ccList": "example@example.com"
+        }
+      },
+      "id": "b2aaefe3-0c09-406a-8f40-46f920d2ffc0",
+      "name": "Enviar PDF por correo",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        4912,
+        128
+      ],
+      "webhookId": "89012339-1fe7-4612-84a2-74bb5ee1fc81",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  // === RANGOS DE SELLADO ===\n  { json: { hoja: 'Turnos Sellado', rango: 'B3:E15' } },\n  { json: { hoja: 'Turnos Sellado', rango: 'B18:E30' } },\n  { json: { hoja: 'Turnos Sellado', rango: 'B33:E45' } },\n  { json: { hoja: 'Turnos Sellado', rango: 'B48:E60' } },\n  { json: { hoja: 'Turnos Sellado', rango: 'A63:E71' } },\n  { json: { hoja: 'Turnos Sellado', rango: 'A74:E82' } },\n  { json: { hoja: 'Turnos Sellado', rango: 'A85:E95' } },\n\n  // === RANGOS DE EXTRUSIÓN ===\n  { json: { hoja: 'Turnos Extrusión', rango: 'B3:E11' } },\n  { json: { hoja: 'Turnos Extrusión', rango: 'B14:E22' } },\n  { json: { hoja: 'Turnos Extrusión', rango: 'B25:E33' } },\n  { json: { hoja: 'Turnos Extrusión', rango: 'B36:E44' } },\n  { json: { hoja: 'Turnos Extrusión', rango: 'A47:E55' } },\n  { json: { hoja: 'Turnos Extrusión', rango: 'A58:E66' } },\n  { json: { hoja: 'Turnos Extrusión', rango: 'A69:E79' } },\n\n  // === RANGOS DE IMPRESIÓN ===\n  { json: { hoja: 'Turnos Impresión', rango: 'B3:E4' } },\n  { json: { hoja: 'Turnos Impresión', rango: 'B7:E8' } },\n  { json: { hoja: 'Turnos Impresión', rango: 'B11:E12' } },\n  { json: { hoja: 'Turnos Impresión', rango: 'B15:E16' } },\n  { json: { hoja: 'Turnos Impresión', rango: 'A19:E27' } },\n  { json: { hoja: 'Turnos Impresión', rango: 'A30:E38' } },\n  { json: { hoja: 'Turnos Impresión', rango: 'A41:E51' } }\n];"
+      },
+      "id": "7e355ca9-dd27-4e5e-a1e1-0f16f498cd21",
+      "name": "Lista de áreas para limpiar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5152,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "180727b2-7fdb-480d-96eb-7c16b9c0f600",
+      "name": "Por cada área (limpiar)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        5392,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "clear",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_TURNOS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.hoja }}",
+          "mode": "name"
+        },
+        "clear": "specificRange",
+        "range": "={{ $json.rango }}"
+      },
+      "id": "70f5a4a3-06d2-4684-97b1-8cc75490d71a",
+      "name": "Limpiar hoja del área",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        5584,
+        144
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_TURNOS",
+          "mode": "list",
+          "cachedResultName": "Entrega de Turnos",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_TURNOS/edit?usp=drivesdk"
+        },
+        "options": {
+          "binaryPropertyName": "reporte",
+          "googleFileConversion": {
+            "conversion": {
+              "sheetsToFormat": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+          },
+          "fileName": "={{ new Date().toLocaleDateString() }}.xlsx"
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        4688,
+        128
+      ],
+      "id": "6d9c119b-7dbd-456d-a9e4-60f535c24ffc",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cICUyPueeWaLrbXQ",
+          "name": "Drive Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        4080,
+        336
+      ],
+      "id": "4674e989-aeaa-417e-bd10-9334397b3bdc",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "hubxUNt0M95zQ33L",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Lista de áreas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lista de áreas": {
+      "main": [
+        [
+          {
+            "node": "Por cada área",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Unir resultados de áreas",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Por cada área": {
+      "main": [
+        [
+          {
+            "node": "Unir resultados de áreas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Leer hoja del área",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer hoja del área": {
+      "main": [
+        [
+          {
+            "node": "Procesar datos del área",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar datos del área": {
+      "main": [
+        [
+          {
+            "node": "Por cada área",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unir resultados de áreas": {
+      "main": [
+        [
+          {
+            "node": "Preparar datos para IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar datos para IA": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Construir HTML del PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar PDF por correo": {
+      "main": [
+        [
+          {
+            "node": "Lista de áreas para limpiar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lista de áreas para limpiar": {
+      "main": [
+        [
+          {
+            "node": "Por cada área (limpiar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Por cada área (limpiar)": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Limpiar hoja del área",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar hoja del área": {
+      "main": [
+        [
+          {
+            "node": "Por cada área (limpiar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir HTML del PDF": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Enviar PDF por correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "America/Bogota",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "9d9b369d-3f99-458e-a0ec-cd8738493fe8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "lWenKXjo0sN0kHYD",
+  "tags": []
+}

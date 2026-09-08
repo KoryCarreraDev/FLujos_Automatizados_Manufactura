@@ -1,0 +1,475 @@
+{
+  "name": "Tareas Preventivas Mantenimiento",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -2640,
+        -272
+      ],
+      "id": "1b38353d-9138-472e-b53f-30c94e77a422",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const hojas = [];\nfor (let i = 1; i <= 9; i++) hojas.push({ hoja: `Selladora ${i}` });\nfor (let i = 1; i <= 9; i++) hojas.push({ hoja: `Extrusora ${i}` });\nfor (let i = 1; i <= 2; i++) hojas.push({ hoja: `Impresora ${i}` });\nfor (let i = 1; i <= 2; i++) hojas.push({ hoja: `Troqueladora ${i}` });\nreturn hojas.map(nombre => ({ json: nombre }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2432,
+        -272
+      ],
+      "id": "0f837983-2345-491b-831f-920e2a9a806c",
+      "name": "Generar lista de hojas"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2224,
+        -272
+      ],
+      "id": "c0a596ef-026e-4cf9-ba1f-6646c55a7879",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.hoja }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1856,
+        -256
+      ],
+      "id": "2f8a5305-11a4-436c-bce6-8db9bbf65998",
+      "name": "Leer hoja",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const hoja = $('Loop Over Items').item.json.hoja;\nconst filas = $input.all();\n\n// Devolvemos un único ítem especial para hojas sin datos\nif (filas.length === 0) {\n  return [{ json: { hoja: hoja, _vacia: true, _skip: true } }];\n}\n\nfunction normalizarClave(str) {\n  return str\n    .trim()\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/['´`]/g, '')\n    .replace(/\\s+/g, '');\n}\n\nconst mapeo = {\n  'tareas/procesos': 'tareas',\n  'ultimarevision': 'ultimaRevision',\n  'frecuencia(dias)': 'frecuenciaDias',\n  'semaforo': 'semaforo',\n  'estado(pendiente/cumplida)': 'estado',\n  'nombreresponsable/s': 'responsable',\n  'ultimasobservaciones': 'observaciones',\n  'rownumber': 'row_number'\n};\n\nreturn filas.map(item => {\n  const raw = item.json;\n  const normalizado = {};\n  if (raw.row_number !== undefined) {\n    normalizado.row_number = raw.row_number;\n  }\n  for (const key of Object.keys(raw)) {\n    const claveNorm = normalizarClave(key);\n    const estandar = mapeo[claveNorm];\n    if (estandar) {\n      normalizado[estandar] = raw[key];\n    } else {\n      normalizado[key] = raw[key];\n    }\n  }\n  normalizado.hoja = hoja;\n  return { json: normalizado };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        -256
+      ],
+      "id": "1eaa1a63-f78a-42af-9bc0-6a8a8ce47104",
+      "name": "Normalizar columnas y agregar hoja"
+    },
+    {
+      "parameters": {
+        "jsCode": "const hoy = new Date();\nconst ayer = new Date(hoy);\nayer.setDate(ayer.getDate() - 1);\nconst diaA = String(ayer.getDate()).padStart(2, '0');\nconst mesA = String(ayer.getMonth() + 1).padStart(2, '0');\nconst anioA = ayer.getFullYear();\nconst fechaAyer = `${diaA}/${mesA}/${anioA}`;\n\nconst completados = ['cumplido', 'cumplida', 'lista', 'listo', 'hecha', 'hecho', 'null', ''];\n\nfunction normalizarTexto(str) {\n  return String(str)\n    .trim()\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/['´`]/g, '');\n}\n\nreturn $input.all().map(item => {\n  const data = { ...item.json };\n  const estadoRaw = data.estado || '';\n  const estadoNorm = normalizarTexto(estadoRaw);\n\n  // Inicializamos el flag de cambio\n  data._changed = false;\n\n  if (completados.includes(estadoNorm)) {\n    data.ultimaRevision = fechaAyer;\n    data.estado = 'Pendiente';\n    data._changed = true;        // marcamos que esta fila debe actualizarse\n  }\n\n  return { json: data };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        -288
+      ],
+      "id": "92246b09-2c88-40c3-a008-64d54dd14d9c",
+      "name": "Reiniciar cumplidas (fecha ayer)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const hoy = new Date();\nhoy.setHours(0, 0, 0, 0);\n\nfunction normalizarTexto(str) {\n  return String(str)\n    .trim()\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/['´`]/g, '');\n}\n\nreturn $input.all().map(item => {\n  const data = { ...item.json };\n  const estadoRaw = data.estado || '';\n  const estado = normalizarTexto(estadoRaw);\n\n  if (estado === 'pendiente') {\n    let fechaStr = data.ultimaRevision;\n    const frecuenciaRaw = data.frecuenciaDias;\n    const frecuencia = parseInt(frecuenciaRaw, 10);\n\n    let nuevoSemaforo = null;\n\n    if (!fechaStr || typeof fechaStr !== 'string' || fechaStr.trim() === '' || isNaN(frecuencia) || frecuencia <= 0) {\n      nuevoSemaforo = 'Gris';\n    } else {\n      fechaStr = fechaStr.replace(/[-_.]/g, '/');\n      const partes = fechaStr.split('/');\n      if (partes.length === 3) {\n        const dia = parseInt(partes[0], 10);\n        const mes = parseInt(partes[1], 10) - 1;\n        const anio = parseInt(partes[2], 10);\n        const fechaRevision = new Date(anio, mes, dia);\n\n        if (!isNaN(fechaRevision.getTime())) {\n          fechaRevision.setHours(0, 0, 0, 0);\n          const fechaLimite = new Date(fechaRevision);\n          fechaLimite.setDate(fechaLimite.getDate() + frecuencia);\n          const diffTime = fechaLimite - hoy;\n          const diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));\n\n          if (diasRestantes <= 2) {\n            nuevoSemaforo = 'Rojo';\n          } else if (diasRestantes <= 4) {\n            nuevoSemaforo = 'Naranja';\n          } else {\n            nuevoSemaforo = 'Verde';\n          }\n\n          // Normalizar fecha\n          data.ultimaRevision = `${dia.toString().padStart(2, '0')}/${(mes + 1).toString().padStart(2, '0')}/${anio}`;\n        } else {\n          nuevoSemaforo = 'Gris';\n        }\n      } else {\n        nuevoSemaforo = 'Gris';\n      }\n    }\n\n    // Solo actualizamos y marcamos cambio si el semáforo calculado difiere del original\n    if (nuevoSemaforo !== null && data.semaforo !== nuevoSemaforo) {\n      data.semaforo = nuevoSemaforo;\n      data._changed = true;\n    }\n  }\n\n  return { json: data };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        -288
+      ],
+      "id": "0ac0b7d9-88b1-483f-b74a-cd3682638be5",
+      "name": "Calcular semáforo"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-changed",
+              "leftValue": "={{ $json._changed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -928,
+        -288
+      ],
+      "id": "e6aea543-4392-42ce-ada8-ed15840d2231",
+      "name": "Solo filas modificadas"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -496,
+        -272
+      ],
+      "id": "cac0d312-b3e1-4485-be92-d2cad8d98009",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.hoja }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "Ultima Revisión": "={{ $json.ultimaRevision }}",
+            "Semaforo": "={{ $json.semaforo }}",
+            "Estado (Pendiente / Cumplida)": "={{ $json.estado }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Tareas / Procesos",
+              "displayName": "Tareas / Procesos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ultima Revisión",
+              "displayName": "Ultima Revisión",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Frecuencia (Días)",
+              "displayName": "Frecuencia (Días)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Semaforo",
+              "displayName": "Semaforo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Estado (Pendiente / Cumplida)",
+              "displayName": "Estado (Pendiente / Cumplida)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nombre Responsable / s",
+              "displayName": "Nombre Responsable / s",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ultimas Observaciones",
+              "displayName": "Ultimas Observaciones",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -224,
+        -256
+      ],
+      "id": "c16ec8e3-b72e-4fb0-a660-1db2d6c66bd1",
+      "name": "Actualizar hoja",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1.5,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -704,
+        -272
+      ],
+      "id": "f88c1b96-1d6a-43b7-a75d-701135482f92",
+      "name": "Wait",
+      "webhookId": "ec6e4ca9-2705-409d-a854-af7e8a052a41"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        -256
+      ],
+      "id": "16db1993-9ede-4696-b007-08cef8500f79",
+      "name": "Wait1",
+      "webhookId": "930d986c-96ff-41fc-aeca-622727c97d6d"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generar lista de hojas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar lista de hojas": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Reiniciar cumplidas (fecha ayer)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Leer hoja",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer hoja": {
+      "main": [
+        [
+          {
+            "node": "Normalizar columnas y agregar hoja",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar columnas y agregar hoja": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reiniciar cumplidas (fecha ayer)": {
+      "main": [
+        [
+          {
+            "node": "Calcular semáforo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular semáforo": {
+      "main": [
+        [
+          {
+            "node": "Solo filas modificadas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solo filas modificadas": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Actualizar hoja",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar hoja": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "America/Bogota",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "0e823805-19f2-4806-9bd6-a29154fc53b0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "MfeYDH39lG5cP4OU",
+  "tags": []
+}

@@ -1,0 +1,314 @@
+{
+  "name": "Alertas de Stock Minimo Cintas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -272,
+        96
+      ],
+      "id": "5f6c88bd-a844-4fe1-97a5-fddb39f3a734",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1252223678,
+          "mode": "list",
+          "cachedResultName": "Inventario Seguridad"
+        },
+        "options": {
+          "dataLocationOnSheet": {
+            "values": {
+              "rangeDefinition": "detectAutomatically"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -64,
+        -48
+      ],
+      "id": "ea0d2fb7-c22d-4493-a926-db242e36a945",
+      "name": "Leer Inventario Seguridad",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 454836705,
+          "mode": "list",
+          "cachedResultName": "Inventario Resellable"
+        },
+        "options": {
+          "dataLocationOnSheet": {
+            "values": {
+              "rangeDefinition": "detectAutomatically"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -64,
+        240
+      ],
+      "id": "438f9d00-3c15-4ceb-b328-485c75662589",
+      "name": "Leer Inventario Resellable",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrae el último valor de Stock Restante de Seguridad\nconst rows = $input.all().map(item => item.json);\nconst stocks = rows.map(r => parseFloat(r[\"Stock Restante\"])).filter(v => !isNaN(v));\nconst ultimoStock = stocks.length > 0 ? stocks[stocks.length - 1] : 0;\n\nreturn [{\n  json: {\n    tipo: \"Seguridad\",\n    stock: ultimoStock\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        -48
+      ],
+      "id": "e8bfc90a-da61-4ffb-98fb-307861aeebec",
+      "name": "Último Stock Seguridad"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrae el último valor de Stock Restante de Resellable\nconst rows = $input.all().map(item => item.json);\nconst stocks = rows.map(r => parseFloat(r[\"Stock Restante\"])).filter(v => !isNaN(v));\nconst ultimoStock = stocks.length > 0 ? stocks[stocks.length - 1] : 0;\n\nreturn [{\n  json: {\n    tipo: \"Resellable\",\n    stock: ultimoStock\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        240
+      ],
+      "id": "09a21c4e-d706-417e-b96e-aded9750f1d2",
+      "name": "Último Stock Resellable"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        368,
+        96
+      ],
+      "id": "800cd8b7-7344-4e69-964d-218b278dc265",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recibe los dos ítems del Merge\nconst stocks = {};\nfor (const item of $input.all()) {\n  stocks[item.json.tipo] = item.json.stock;\n}\n\nconst limites = {\n  Seguridad: 40,\n  Resellable: 4\n};\n\nconst alertas = [];\n\nfor (const [tipo, stock] of Object.entries(stocks)) {\n  const min = limites[tipo];\n  if (stock < min) {\n    alertas.push(`⚠️ ${tipo}: ${stock} unidades (mínimo ${min})`);\n  }\n}\n\nconst enviarAlerta = alertas.length > 0;\nconst mensaje = enviarAlerta\n  ? `🔴 ALERTA DE STOCK BAJO\\n\\n${alertas.join('\\n')}\\n\\nRevisar inventario.`\n  : '';\n\nreturn [{\n  json: {\n    enviar: enviarAlerta,\n    mensaje: mensaje,\n    detalles: alertas\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        96
+      ],
+      "id": "6add0442-c946-47a8-9fc1-057bfbece052",
+      "name": "Verificar Límites"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-alerta",
+              "leftValue": "={{ $json.enviar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        96
+      ],
+      "id": "fa035be0-b8f9-40bc-bc90-99cda196c669",
+      "name": "¿Alerta?"
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com, example@example.com",
+        "subject": "🚨 Alerta de Stock Bajo - Inventario de Cintas",
+        "message": "={{ $json.mensaje }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1024,
+        80
+      ],
+      "id": "4e820d37-b4a7-4dc4-9c73-9e5624e0260f",
+      "name": "Enviar Correo de Alerta",
+      "webhookId": "48a2ae14-6b86-46d4-a662-2acb9e951898",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Leer Inventario Seguridad",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Leer Inventario Resellable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Inventario Seguridad": {
+      "main": [
+        [
+          {
+            "node": "Último Stock Seguridad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Inventario Resellable": {
+      "main": [
+        [
+          {
+            "node": "Último Stock Resellable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Último Stock Seguridad": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Último Stock Resellable": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Verificar Límites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Límites": {
+      "main": [
+        [
+          {
+            "node": "¿Alerta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Alerta?": {
+      "main": [
+        [
+          {
+            "node": "Enviar Correo de Alerta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f5b91d4c-1341-4307-8072-638d385826f6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "Z62qAgLmlMlbGtz1",
+  "tags": []
+}

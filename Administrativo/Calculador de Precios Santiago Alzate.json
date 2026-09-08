@@ -1,0 +1,426 @@
+{
+  "name": "Calculador de Precios Santiago Alzate",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        -48
+      ],
+      "id": "635d7f81-8610-4957-9d65-f8d43fb9e4d5",
+      "name": "Cada 5 minutos"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Precios Calculo",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_DRIVE_FOLDER_ID/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        464,
+        -48
+      ],
+      "id": "e58a7a20-8c16-47cd-bfcc-468fd0df306a",
+      "name": "Leer lista de precios",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst mapaPrecios = {};\n\nfor (const r of rows) {\n  const mat = (r.Material || '').trim();\n  if (!mat) continue;\n\n  const aNumero = (val) => {\n    if (val === undefined || val === null) return 0;\n    if (typeof val === 'number') return val;\n    const str = String(val).replace(/[$,]/g, '');\n    const num = parseFloat(str);\n    return isNaN(num) ? 0 : num;\n  };\n\n  mapaPrecios[mat] = {\n    kiloOriginal: aNumero(r['Kilo Original']),\n    descRec100: aNumero(r['1']),             // 100% recuperado (columna \"1\")\n    descRec50: aNumero(r['50% / 50%']),     // 50/50\n    descRec7030: aNumero(r['70% / 30%']),   // 70% rec / 30% orig\n    unaTinta: aNumero(r['1 tinta']),\n    restoTintas: aNumero(r['Resto de Tintas']),\n    biosphere: aNumero(r['Biosphere']),\n    troquelado: aNumero(r['Troquelado']),\n    seguridadCm: aNumero(r['Seguridad x cm']),\n    resellableCm: aNumero(r['Resellable x cm'])\n  };\n}\n\n$getWorkflowStaticData('global').precios = mapaPrecios;\nreturn [{ json: { ok: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -48
+      ],
+      "id": "81689e1e-a7b2-4cb8-91a8-eb646058ebaa",
+      "name": "Mapear precios"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_CALCULADOR_PRECIOS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Calculador de Precio",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_CALCULADOR_PRECIOS/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        464,
+        192
+      ],
+      "id": "7afdc227-4d2b-4704-beb2-cea8968732b9",
+      "name": "Leer pedidos comerciales",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const precios = $getWorkflowStaticData('global').precios || {};\n\n// SECRETO: Densidades por material (en g/cm³)\nconst DENSIDADES = {\n  'baja': ej,\n  'alta': ej,\n  'pp': ej,\n  'mahiz': ej\n};\n\n// Costo de aditivo por kilogramo\nconst COSTO_ADITIVO_KG = 1;\n\nconst pedidos = $input.all().map(i => i.json);\nconst resultados = [];\n\nfor (const p of pedidos) {\n  \n  if (p['Precio Unidad'] && String(p['Precio Unidad']).trim() !== '') continue;\n\n  const materialRaw = (p.Material || '').trim();\n  const ancho = parseFloat(p.Ancho);\n  const largo = parseFloat(p.Largo);\n  const calibre = parseFloat(String(p.Calibre).replace(',', '.'));\n  const rowNumber = p.row_number;\n\n  if (!materialRaw || isNaN(ancho) || isNaN(largo) || isNaN(calibre) || rowNumber === undefined) continue;\n\n  const materialLower = materialRaw.toLowerCase();\n  const densidad = DENSIDADES[materialLower];\n  if (densidad === undefined) continue;\n\n  const preciosMat = precios[materialRaw];\n  if (!preciosMat) continue;\n\n  // 1. Peso por bolsa (gramos)\n  const pesoBolsaGramos = ancho * largo * calibre * densidad;\n  // 2. Bolsas por kg (redondeadas a 1 decimal, como en tu cálculo)\n  const bolsasPorKgExactas = 1000 / pesoBolsaGramos;\n  const bolsasPorKg = Math.round(bolsasPorKgExactas * 10) / 10;\n\n  // 3. Precio base por kg (con nuevos descuentos por tipo de recuperado)\n  const tipoRecuperado = (p['Recuperado / Original'] || '').toString().trim().toLowerCase();\n  let baseKg = preciosMat.kiloOriginal;\n\n  if (tipoRecuperado.includes('recuperado')) {\n    if (tipoRecuperado.includes('50')) {\n      baseKg -= preciosMat.descRec50 || 0;          // 50/50\n    } else if (tipoRecuperado.includes('70')) {\n      baseKg -= preciosMat.descRec7030 || 0;        // 70/30\n    } else {\n      baseKg -= preciosMat.descRec100 || 0;         // 100% recuperado\n    }\n  }\n\n  const tintas = parseInt(p.Tintas) || 0;\n  let costoTintasKg = 0;\n  if (materialLower === 'mahiz') {\n    if (tintas > 1) {\n      costoTintasKg = (tintas - 1) * preciosMat.restoTintas;\n    }\n  } else {\n    if (tintas >= 1) {\n      costoTintasKg = preciosMat.unaTinta;\n      if (tintas > 1) {\n        costoTintasKg += (tintas - 1) * preciosMat.restoTintas;\n      }\n    }\n  }\n\n  // Aditivo\n  const conAditivo = (p.Aditivo || '').toString().toLowerCase() === 'si';\n  const aditivoKg = conAditivo ? COSTO_ADITIVO_KG : 0;\n\n  // Troquelado\n  const conTroquelado = (p.Troquelado || '').toString().toLowerCase() === 'si';\n  const troqueladoKg = conTroquelado ? (preciosMat.troquelado || 0) : 0;\n\n  // Precio total por kg\n  const precioKg = baseKg + costoTintasKg + aditivoKg + troqueladoKg;\n\n  // 4. Precio unitario base (sin cinta), truncado a 2 decimales\n  let precioUnidad = precioKg / bolsasPorKg;\n  precioUnidad = Math.floor(precioUnidad * 100) / 100;\n\n  // 5. Cinta (solo una, prioridad seguridad)\n  const cintaSeguridad = (p['Cinta Seguridad'] || '').toString().toLowerCase() === 'si';\n  const cintaResellable = (p['Cinta resellable'] || '').toString().toLowerCase() === 'si';\n  if (cintaSeguridad) {\n    precioUnidad += ancho * (preciosMat.seguridadCm || 0);\n  } else if (cintaResellable) {\n    precioUnidad += ancho * (preciosMat.resellableCm || 0);\n  }\n\n  // 6. Cantidad mínima (Mahiz: 80 kg, otros: 100 kg)\n  const baseMinima = materialLower === 'mahiz' ? 80000 : 100000;\n  const cantidadMinima = Math.ceil(baseMinima / pesoBolsaGramos);\n\n  resultados.push({\n    json: {\n      row_number: rowNumber,\n      'Precio Unidad': Math.round(precioUnidad * 100) / 100,\n      'Cantidad Minima': cantidadMinima\n    }\n  });\n}\n\nif (resultados.length === 0) {\n  return [{ json: { sinCambios: true } }];\n}\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        192
+      ],
+      "id": "001df7e4-b83f-4c59-a374-492bdb989eb5",
+      "name": "Calcular precios y cantidad"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_CALCULADOR_PRECIOS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Calculador de Precio",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_CALCULADOR_PRECIOS/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "Cantidad Minima": "={{ $json['Cantidad Minima'] }}",
+            "Precio Unidad": "={{ $json['Precio Unidad'] }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Titulo Referencia",
+              "displayName": "Titulo Referencia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cliente",
+              "displayName": "Cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Recuperado / Original",
+              "displayName": "Recuperado / Original",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Material",
+              "displayName": "Material",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Aditivo",
+              "displayName": "Aditivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cinta Seguridad",
+              "displayName": "Cinta Seguridad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cinta resellable",
+              "displayName": "Cinta resellable",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tintas",
+              "displayName": "Tintas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Troquelado",
+              "displayName": "Troquelado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Ancho",
+              "displayName": "Ancho",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Largo",
+              "displayName": "Largo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Calibre",
+              "displayName": "Calibre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Precio Unidad",
+              "displayName": "Precio Unidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cantidad Minima",
+              "displayName": "Cantidad Minima",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Informada (Automatico)",
+              "displayName": "Informada (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1200,
+        208
+      ],
+      "id": "0e3da999-39f9-4746-9d9a-90916805000c",
+      "name": "Actualizar pedidos",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "081f4468-315e-4908-916a-0dbcc920c313",
+              "leftValue": "={{ $json.row_number }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        960,
+        192
+      ],
+      "id": "047fc711-84d3-483a-bd8d-c8eafd3c61b5",
+      "name": "If"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cada 5 minutos": {
+      "main": [
+        [
+          {
+            "node": "Leer lista de precios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer lista de precios": {
+      "main": [
+        [
+          {
+            "node": "Mapear precios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mapear precios": {
+      "main": [
+        [
+          {
+            "node": "Leer pedidos comerciales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer pedidos comerciales": {
+      "main": [
+        [
+          {
+            "node": "Calcular precios y cantidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular precios y cantidad": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Actualizar pedidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "f152ddcf-ecaa-4419-a4de-07693dd549fa",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "6WxxOFZNjJPL3UKd",
+  "tags": []
+}

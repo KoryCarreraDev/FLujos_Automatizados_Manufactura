@@ -1,0 +1,575 @@
+{
+  "name": "Solicitud de movimientos",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        864,
+        112
+      ],
+      "id": "01de26ea-524d-4e6c-909e-df30218fdbf9",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1049068235,
+          "mode": "list",
+          "cachedResultName": "Solicitudes de Movimiento",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_INVENTARIO/edit#gid=1049068235"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('HTML para Gmail').item.json.row_number }}",
+            "Informada": "SI"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Marca temporal",
+              "displayName": "Marca temporal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Material solicitado",
+              "displayName": "Material solicitado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cantidad del movimiento (Solo numeros)",
+              "displayName": "Cantidad del movimiento (Solo numeros)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Interno (Bodega) o Externo (Compras)?",
+              "displayName": "¿Interno (Bodega) o Externo (Compras)?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Informada",
+              "displayName": "Informada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Respuesta al movimiento",
+              "displayName": "Respuesta al movimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1504,
+        -288
+      ],
+      "id": "37559943-ac0e-46cc-989c-2606fa2e1a1b",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 4
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ca01add4-1f77-4f79-8f23-8630d9d54480",
+      "name": "Cada 4 minutos"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1049068235,
+          "mode": "list",
+          "cachedResultName": "Solicitudes de Movimiento",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_INVENTARIO/edit#gid=1049068235"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        208,
+        0
+      ],
+      "id": "81104257-b169-4539-a2b8-0ec44d83f2f0",
+      "name": "Leer movimientos",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const data = item.json;\n  const informada = data['Informada'];\n  \n  // Considerar vacío si es null, undefined, o string vacío/espacios\n  const estaVacia = !informada || String(informada).trim() === '';\n  \n  return {\n    json: {\n      ...data,\n      informar: estaVacia\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "fbce91d3-8e64-4cef-b5a5-71a8c2db97f3",
+      "name": "Validar Si Informar"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "237af2d6-32d9-42b7-9bb4-4fac6f831739",
+              "leftValue": "={{ $json.informar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        0
+      ],
+      "id": "e25dfd58-9e6b-4caf-abb3-82812d5e237b",
+      "name": "¿Informar?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst baseWebhook = \"https://YOUR_WEBHOOK_URL/webhook/YOUR_WEBHOOK_ID\";\n\n// Campos que NO queremos mostrar en la tabla del correo (porque ya los usamos en otro lado o no interesan)\nconst ignorar = [\"row_number\", \"Informada\", \"Respuesta al movimiento\", \"html\", \"urlAceptar\", \"urlRechazar\", \"informar\"];\n\nreturn items.map(item => {\n  const row = item.json.row_number;\n  const urlAceptar = `${baseWebhook}?row_number=${row}&action=accept&ngrok-skip-browser-warning=true`;\n  const urlRechazar = `${baseWebhook}?row_number=${row}&action=reject&ngrok-skip-browser-warning=true`;\n\n  // Construir las filas de la tabla con todos los campos restantes\n  let filasTabla = \"\";\n  for (const [clave, valor] of Object.entries(item.json)) {\n    if (ignorar.includes(clave)) continue;\n    filasTabla += `\n      <tr>\n        <td style=\"border-bottom:1px solid #e0e0e0; color:#003366; font-weight:600;\">${clave}</td>\n        <td style=\"border-bottom:1px solid #e0e0e0; color:#333;\">${valor ?? ''}</td>\n      </tr>`;\n  }\n\n  const html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Solicitud de Movimiento</title>\n</head>\n<body style=\"margin:0; padding:0; background-color:#f4f7fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">\n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#f4f7fa; padding: 30px 0;\">\n    <tr>\n      <td align=\"center\">\n        <table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05);\">\n          <!-- Encabezado -->\n          <tr>\n            <td style=\"background-color: #003366; padding: 24px 30px; text-align: center;\">\n              <h1 style=\"color:#ffffff; margin:0; font-size: 22px;\">📦 Solicitud de Movimiento de Inventario</h1>\n            </td>\n          </tr>\n          <!-- Cuerpo -->\n          <tr>\n            <td style=\"padding: 30px;\">\n              <p style=\"margin:0 0 20px 0; font-size:16px; color:#333;\">Se ha registrado una nueva solicitud de movimiento de inventario. A continuación los detalles:</p>\n              \n              <table width=\"100%\" cellpadding=\"8\" cellspacing=\"0\" style=\"border-collapse: collapse; margin-bottom: 30px;\">\n                ${filasTabla}\n              </table>\n              \n              <p style=\"margin:0 0 16px 0; font-size:16px; color:#333; text-align:center;\">Por favor, seleccione una opción:</p>\n              \n              <!-- Botones -->\n              <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n                <tr>\n                  <td align=\"center\" style=\"padding: 10px;\">\n                    <a href=\"${urlAceptar}\" target=\"_blank\" style=\"display:inline-block; padding: 14px 32px; background-color: #007BFF; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,123,255,0.3);\">✅ Aceptar</a>\n                  </td>\n                  <td align=\"center\" style=\"padding: 10px;\">\n                    <a href=\"${urlRechazar}\" target=\"_blank\" style=\"display:inline-block; padding: 14px 32px; background-color: #DC3545; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(220,53,69,0.3);\">❌ Rechazar</a>\n                  </td>\n                </tr>\n              </table>\n            </td>\n          </tr>\n          <!-- Pie -->\n          <tr>\n            <td style=\"background-color:#f0f2f5; padding: 16px 30px; text-align:center; border-top:1px solid #e0e0e0;\">\n              <p style=\"margin:0; font-size:12px; color:#888;\">\n                Este mensaje fue generado automáticamente por el sistema de gestión de inventario.<br>\n                Si tiene alguna duda, contacte al administrador.\n              </p>\n            </td>\n          </tr>\n        </table>\n      </td>\n    </tr>\n  </table>\n</body>\n</html>`;\n\n  return {\n    json: {\n      ...item.json,\n      html,\n      urlAceptar,\n      urlRechazar\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        -288
+      ],
+      "id": "a62d74af-1e57-42a4-9c0c-16dc8142ac6f",
+      "name": "HTML para Gmail"
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com",
+        "subject": "📦 Solicitud de movimiento de inventario 📦",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1328,
+        -288
+      ],
+      "id": "690db5f3-1f92-4d9c-bc46-9dcd33670f7d",
+      "name": "Solicitar Aceptación",
+      "webhookId": "8a5f5f2e-7f89-4487-8211-597a0a84ac43",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1049068235,
+          "mode": "list",
+          "cachedResultName": "Solicitudes de Movimiento",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_INVENTARIO/edit#gid=1049068235"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('HTML para Gmail1').item.json.row_number }}",
+            "Informada": "SI"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Marca temporal",
+              "displayName": "Marca temporal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Material solicitado",
+              "displayName": "Material solicitado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cantidad del movimiento (Solo numeros)",
+              "displayName": "Cantidad del movimiento (Solo numeros)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Interno (Bodega) o Externo (Compras)?",
+              "displayName": "¿Interno (Bodega) o Externo (Compras)?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Informada",
+              "displayName": "Informada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Respuesta al movimiento",
+              "displayName": "Respuesta al movimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1504,
+        -64
+      ],
+      "id": "e0e010c4-2449-4540-a5e0-d9ea96d26dff",
+      "name": "Update row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hydWSA03UaTKbAsZ",
+          "name": "Sheets Beiplas Backup"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst baseWebhook = \"https://YOUR_WEBHOOK_URL/webhook/YOUR_WEBHOOK_ID\";\n\n// Campos que NO queremos mostrar en la tabla del correo (porque ya los usamos en otro lado o no interesan)\nconst ignorar = [\"row_number\", \"Informada\", \"Respuesta al movimiento\", \"html\", \"urlAceptar\", \"urlRechazar\", \"informar\"];\n\nreturn items.map(item => {\n  const row = item.json.row_number;\n  const urlAceptar = `${baseWebhook}?row_number=${row}&action=accept&ngrok-skip-browser-warning=true`;\n  const urlRechazar = `${baseWebhook}?row_number=${row}&action=reject&ngrok-skip-browser-warning=true`;\n\n  // Construir las filas de la tabla con todos los campos restantes\n  let filasTabla = \"\";\n  for (const [clave, valor] of Object.entries(item.json)) {\n    if (ignorar.includes(clave)) continue;\n    filasTabla += `\n      <tr>\n        <td style=\"border-bottom:1px solid #e0e0e0; color:#003366; font-weight:600;\">${clave}</td>\n        <td style=\"border-bottom:1px solid #e0e0e0; color:#333;\">${valor ?? ''}</td>\n      </tr>`;\n  }\n\n  const html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Solicitud de Movimiento</title>\n</head>\n<body style=\"margin:0; padding:0; background-color:#f4f7fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">\n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#f4f7fa; padding: 30px 0;\">\n    <tr>\n      <td align=\"center\">\n        <table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05);\">\n          <!-- Encabezado -->\n          <tr>\n            <td style=\"background-color: #003366; padding: 24px 30px; text-align: center;\">\n              <h1 style=\"color:#ffffff; margin:0; font-size: 22px;\">📦 Solicitud de Movimiento de Inventario</h1>\n            </td>\n          </tr>\n          <!-- Cuerpo -->\n          <tr>\n            <td style=\"padding: 30px;\">\n              <p style=\"margin:0 0 20px 0; font-size:16px; color:#333;\">Se ha registrado una nueva solicitud de movimiento de inventario. A continuación los detalles:</p>\n              \n              <table width=\"100%\" cellpadding=\"8\" cellspacing=\"0\" style=\"border-collapse: collapse; margin-bottom: 30px;\">\n                ${filasTabla}\n              </table>\n              \n              <p style=\"margin:0 0 16px 0; font-size:16px; color:#333; text-align:center;\">Por favor, seleccione una opción:</p>\n              \n              <!-- Botones -->\n              <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n                <tr>\n                  <td align=\"center\" style=\"padding: 10px;\">\n                    <a href=\"${urlAceptar}\" target=\"_blank\" style=\"display:inline-block; padding: 14px 32px; background-color: #007BFF; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,123,255,0.3);\">✅ Aceptar</a>\n                  </td>\n                  <td align=\"center\" style=\"padding: 10px;\">\n                    <a href=\"${urlRechazar}\" target=\"_blank\" style=\"display:inline-block; padding: 14px 32px; background-color: #DC3545; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(220,53,69,0.3);\">❌ Rechazar</a>\n                  </td>\n                </tr>\n              </table>\n            </td>\n          </tr>\n          <!-- Pie -->\n          <tr>\n            <td style=\"background-color:#f0f2f5; padding: 16px 30px; text-align:center; border-top:1px solid #e0e0e0;\">\n              <p style=\"margin:0; font-size:12px; color:#888;\">\n                Este mensaje fue generado automáticamente por el sistema de gestión de inventario.<br>\n                Si tiene alguna duda, contacte al administrador.\n              </p>\n            </td>\n          </tr>\n        </table>\n      </td>\n    </tr>\n  </table>\n</body>\n</html>`;\n\n  return {\n    json: {\n      ...item.json,\n      html,\n      urlAceptar,\n      urlRechazar\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        -64
+      ],
+      "id": "999de1ce-0d79-4899-ab67-ccb0021bfd9c",
+      "name": "HTML para Gmail1"
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com",
+        "subject": "📦 Solicitud de movimiento de inventario 📦",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1328,
+        -64
+      ],
+      "id": "825fc66c-be05-44c4-8e98-c6e3b16ef678",
+      "name": "Solicitar Aceptación1",
+      "webhookId": "8a5f5f2e-7f89-4487-8211-597a0a84ac43",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1dd34c25-8898-4d38-84ab-19dbdae2f894",
+              "leftValue": "={{ $json[\"¿Interno (Bodega) o Externo (Compras)?\"] }}",
+              "rightValue": "Interno",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        -144
+      ],
+      "id": "3cb4f777-1135-4afa-8d19-826ffe56432f",
+      "name": "Bodega o Compras"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cada 4 minutos": {
+      "main": [
+        [
+          {
+            "node": "Leer movimientos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer movimientos": {
+      "main": [
+        [
+          {
+            "node": "Validar Si Informar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Si Informar": {
+      "main": [
+        [
+          {
+            "node": "¿Informar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Informar?": {
+      "main": [
+        [
+          {
+            "node": "Bodega o Compras",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML para Gmail": {
+      "main": [
+        [
+          {
+            "node": "Solicitar Aceptación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solicitar Aceptación": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML para Gmail1": {
+      "main": [
+        [
+          {
+            "node": "Solicitar Aceptación1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solicitar Aceptación1": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bodega o Compras": {
+      "main": [
+        [
+          {
+            "node": "HTML para Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTML para Gmail1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "aece12b9-9aa5-456b-8624-3777d572e7bd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "BBmgtTdlFnFm7IFz",
+  "tags": []
+}

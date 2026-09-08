@@ -1,0 +1,1604 @@
+{
+  "name": "Insertar y Calcular Simulador",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT 'maquina' AS tipo, codigo_legacy AS clave, id_maquina AS id\nFROM public.maquinas WHERE codigo_legacy IS NOT NULL\nUNION ALL\nSELECT 'referencia', legacy_id, id_referencia\nFROM public.referencias WHERE legacy_id IS NOT NULL;",
+        "options": {}
+      },
+      "id": "e53a0a7a-a5bd-4b4e-90a1-6aa9ea45c1e2",
+      "name": "Cargar mapeos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2688,
+        352
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\n\nconst mapMaquinas = {};\nconst mapReferencias = {};\n\nfor (const item of rows) {\n  const row = item.json;\n  if (row.tipo === 'maquina') {\n    if (row.clave) mapMaquinas[row.clave] = row.id;\n  } else if (row.tipo === 'referencia') {\n    if (row.clave) mapReferencias[row.clave] = row.id;\n  }\n}\n\n$getWorkflowStaticData('global').mapeoMaquinas = mapMaquinas;\n$getWorkflowStaticData('global').mapeoReferencias = mapReferencias;\n\nreturn [{ json: { mapeos_cargados: true } }];"
+      },
+      "id": "1cc3eb2e-9089-4c21-b670-041d34efe718",
+      "name": "Guardar mapeos en static data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2512,
+        352
+      ],
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_TIEMPOS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 113771931,
+          "mode": "list",
+          "cachedResultName": "programacion",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_TIEMPOS/edit#gid=113771931"
+        },
+        "options": {}
+      },
+      "id": "14738a05-5778-4cc9-8ada-eacf8993efd0",
+      "name": "Leer programación",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -2304,
+        352
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 50,
+        "options": {}
+      },
+      "id": "3ee6eb40-faca-4eb6-aa61-7edd01e108d6",
+      "name": "Lotes de 50 filas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1888,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const loteItems = $input.all().map(item => item.json);\nconst mapMaquinas = $getWorkflowStaticData('global').mapeoMaquinas || {};\nconst mapReferencias = $getWorkflowStaticData('global').mapeoReferencias || {};\n\n// ----- ACUMULAR IDs PROCESADOS -----\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.programacionesProcesadas) staticData.programacionesProcesadas = [];\nconst ids = loteItems\n  .map(item => String(item.ID_Programacion || '').trim())\n  .filter(id => id);\nstaticData.programacionesProcesadas.push(...ids);\n// -----------------------------------\n\nconst escape = (v) => String(v).replace(/'/g, \"''\");\nconst formatTimestamp = (fechaStr) => {\n  if (!fechaStr) return 'NULL';\n  const normalizada = fechaStr.replace(/[-_.]/g, '/');\n  const partes = normalizada.split('/');\n  if (partes.length !== 3) return 'NULL';\n  const [d, m, a] = partes;\n  return `'${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')} 00:00:00'`;\n};\nconst parseNumber = (val) => {\n  if (!val) return 0;\n  const num = parseFloat(String(val).replace(',', '.'));\n  return isNaN(num) ? 0 : num;\n};\n\nconst values = loteItems.map(item => {\n  const id = escape(String(item.ID_Programacion || '').trim());\n  const kilos = parseNumber(item.CantidadKilos_Programacion);\n  const horas = parseNumber(item.DuracionEstimada_Programacion);\n  \n  const ot = item.IDOrdenTrabajo_Programacion ? `'${escape(item.IDOrdenTrabajo_Programacion)}'` : 'NULL';\n  const cliente = item.IDCliente_Programacion ? `'${escape(item.IDCliente_Programacion)}'` : 'NULL';\n  const refLegacy = item.IDReferencia_Programacion ? `'${escape(item.IDReferencia_Programacion)}'` : 'NULL';\n  const proceso = item.Proceso_Programacion ? `'${escape(item.Proceso_Programacion)}'` : 'NULL';\n  const estado = item.Estado_Programacion ? `'${escape(item.Estado_Programacion)}'` : 'NULL';\n  \n  const fechaInicio = formatTimestamp(item.Fecha_Programacion);\n  const fechaEstimada = formatTimestamp(item.FechaEntrega_Programacion);\n\n  const rawIdMaquina = mapMaquinas[item.Maquina_Programacion];\n  const idMaquina = rawIdMaquina ? `'${escape(rawIdMaquina)}'` : 'NULL';\n\n  const rawIdReferencia = mapReferencias[item.IDReferencia_Programacion];\n  const idReferencia = rawIdReferencia ? `'${escape(rawIdReferencia)}'` : 'NULL';\n\n  // kilos producidos = kilos programados si el estado es \"Terminada\", sino 0\n  const terminada = (item.Estado_Programacion || '').toString().toLowerCase() === 'terminada';\n  const kilosProducidos = terminada ? kilos : 0;\n\n  // Se añade el campo kilos_producidos al final de la tupla (antes del cierre)\n  return `('${id}', ${kilos}, ${ot}, ${cliente}, ${estado}, ${proceso}, ${fechaInicio}, ${fechaEstimada}, NULL, ${ot}, ${cliente}, ${refLegacy}, ${idReferencia}, ${idMaquina}, 0, NULL, NULL, ${horas}, ${kilosProducidos})`;\n}).join(', ');\n\nconst sql = `INSERT INTO public.programaciones \n(legacy_programacion_id, kilos, ot, cliente, estado, proceso, fecha_inicio, fecha_estimada, fecha_real, legacy_ot_id, legacy_cliente_id, legacy_referencia_id, id_referencia, id_maquina, orden_secuencia, fecha_inicio_estimada, fecha_fin_estimada, horas_estimadas_totales, kilos_producidos)\nVALUES ${values}\nON CONFLICT (legacy_programacion_id) DO UPDATE SET\n  kilos = EXCLUDED.kilos,\n  ot = EXCLUDED.ot,\n  cliente = EXCLUDED.cliente,\n  estado = EXCLUDED.estado,\n  proceso = EXCLUDED.proceso,\n  fecha_inicio = EXCLUDED.fecha_inicio,\n  fecha_estimada = EXCLUDED.fecha_estimada,\n  fecha_real = EXCLUDED.fecha_real,\n  legacy_ot_id = EXCLUDED.legacy_ot_id,\n  legacy_cliente_id = EXCLUDED.legacy_cliente_id,\n  legacy_referencia_id = EXCLUDED.legacy_referencia_id,\n  id_referencia = EXCLUDED.id_referencia,\n  id_maquina = EXCLUDED.id_maquina,\n  orden_secuencia = EXCLUDED.orden_secuencia,\n  fecha_inicio_estimada = EXCLUDED.fecha_inicio_estimada,\n  fecha_fin_estimada = EXCLUDED.fecha_fin_estimada,\n  horas_estimadas_totales = EXCLUDED.horas_estimadas_totales,\n  kilos_producidos = EXCLUDED.kilos_producidos;`;\n\nreturn [{ json: { sql } }];"
+      },
+      "id": "e1bd6190-ecc5-4de6-8b14-fed0e4f90a3a",
+      "name": "Crear upsert masivo por lote",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        512
+      ],
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "id": "54b80a32-246b-4fc2-ab18-c459d8d8e24f",
+      "name": "Ejecutar upsert (lote)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -944,
+        512
+      ],
+      "executeOnce": false,
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    p.fecha_inicio AS \"Fecha de programación (Automatico)\",\n    o.codigo_ot AS \"OT (Automatico)\",\n    cl.nombre AS \"Cliente (Automatico)\",\n    COALESCE(m.nombre, 'Sin Máquina Asignada') AS \"Maquina (Automatico)\",\n    r.titulo_referencia AS \"Referencia (automatico)\",\n    COALESCE(tm_metricas.kilos_producidos, 0) AS \"Kilos hechos (Automatico)\",\n    p.kilos AS \"Kilos programados (Automatico)\",\n    o.cantidad_plan AS \"Kilos pedidos (Automatico)\",\n    p.fecha_inicio AS \"Inicio (Automatico)\",\n    p.fecha_estimada AS \"Finalizacion (Automatico)\",\n    COALESCE(tm_metricas.tiempo_produccion_real, 0) AS \"Tiempo de producción real (Automatico)\",\n    p.estado AS \"Estado (Automatico)\",\n    tm_metricas.ultima_produccion AS \"Ultima Producción (automático)\",\n    COALESCE(tm_metricas.kilos_turno_a, 0) AS \"Kilos Turno A\",\n    COALESCE(tm_metricas.kilos_turno_b, 0) AS \"Kilos Turno B\",\n    COALESCE(tm_metricas.kilos_turno_c, 0) AS \"Kilos Turno C\"\nFROM public.programaciones p\nLEFT JOIN public.maquinas m ON p.id_maquina = m.id_maquina\nLEFT JOIN public.referencias r ON p.id_referencia = r.id_referencia\nLEFT JOIN public.ordenes_trabajo o ON p.legacy_ot_id = o.legacy_id\nLEFT JOIN public.clientes cl ON p.legacy_cliente_id = cl.legacy_id\nLEFT JOIN (\n    SELECT \n        legacy_programacion_id,\n        ROUND(SUM(CASE WHEN tipo = 'Productivo' THEN duracion_horas ELSE 0 END), 2) AS tiempo_produccion_real,\n        ROUND(SUM(CASE WHEN tipo = 'Productivo' THEN cantidad_kilos ELSE 0 END), 2) AS kilos_producidos,\n        MAX(CASE WHEN tipo = 'Productivo' THEN fecha_produccion END) AS ultima_produccion,\n        ROUND(SUM(CASE WHEN tipo = 'Productivo' AND turno = 'Turno 1' AND fecha_produccion = CURRENT_DATE THEN cantidad_kilos ELSE 0 END), 2) AS kilos_turno_a,\n        ROUND(SUM(CASE WHEN tipo = 'Productivo' AND turno = 'Turno 2' AND fecha_produccion = CURRENT_DATE THEN cantidad_kilos ELSE 0 END), 2) AS kilos_turno_b,\n        ROUND(SUM(CASE WHEN tipo = 'Productivo' AND turno = 'Turno 3' AND fecha_produccion = CURRENT_DATE THEN cantidad_kilos ELSE 0 END), 2) AS kilos_turno_c\n    FROM public.tiempos_maquina\n    WHERE legacy_programacion_id IS NOT NULL\n    GROUP BY legacy_programacion_id\n) tm_metricas ON p.legacy_programacion_id = tm_metricas.legacy_programacion_id\n-- Rango de tres semanas: semana pasada, actual y próxima\nWHERE p.fecha_inicio >= DATE_TRUNC('week', CURRENT_DATE - INTERVAL '1 week')\n  AND p.fecha_inicio  < (DATE_TRUNC('week', CURRENT_DATE) + INTERVAL '2 weeks')\n  AND p.fecha_inicio IS NOT NULL\nORDER BY p.proceso, p.id_maquina, p.orden_secuencia, p.fecha_inicio;\n",
+        "options": {}
+      },
+      "id": "5d51ecd8-af85-4648-8563-0aefc4a15f6b",
+      "name": "Obtener datos para simulador",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -800,
+        336
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json[\"Maquina (Automatico)\"] }}",
+                    "rightValue": "Extrusora",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "19bc452c-9f09-44a2-a94c-d68cd1c07c68"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "extrusion"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json[\"Maquina (Automatico)\"] }}",
+                    "rightValue": "Impresora",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "f4404e3a-0c77-410c-b69d-0722f7fb94d8"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "impresion"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json[\"Maquina (Automatico)\"] }}",
+                    "rightValue": "Selladora",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "fae4b026-ef72-4625-8d8e-751b4ac65655"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "sellado"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a4729148-32e2-4f3d-bf4e-05103bb5e7d6",
+      "name": "Separar por área",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -112,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_SIMULADOR",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 718820037,
+          "mode": "list",
+          "cachedResultName": "Simulador Extrusión",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_SIMULADOR/edit#gid=718820037"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha de programación (Automatico)": "={{ $json['Fecha de programación (Automatico)'] }}",
+            "OT (Automatico)": "={{ $json['OT (Automatico)'] }}",
+            "Cliente (Automatico)": "={{ $json['Cliente (Automatico)'] }}",
+            "Maquina (Automatico)": "={{ $json['Maquina (Automatico)'] }}",
+            "Referencia (automatico)": "={{ $json['Referencia (automatico)'] }}",
+            "Kilos hechos (Automatico)": "={{ $json['Kilos hechos (Automatico)'] }}",
+            "Kilos programados (Automatico)": "={{ $json['Kilos programados (Automatico)'] }}",
+            "Kilos restantes (Automatico)": "={{ $json['Kilos restantes (Automatico)'] }}",
+            "Kilos pedidos (Automatico)": "={{ $json['Kilos pedidos (Automatico)'] }}",
+            "Cuantos turnos se usaran (Automatico)": "={{ $json['Cuantos turnos se usaran (Automatico)'] }}",
+            "Fecha sugerido de Inicio (Automatico)": "={{ $json['Fecha sugerido de Inicio (Automatico)'] }}",
+            "Tiempo estimado (Automatico)": "={{ $json['Tiempo estimado (Automatico)'] }}",
+            "Inicio (Automatico)": "={{ $json['Inicio (Automatico)'] }}",
+            "Finalizacion (Automatico)": "={{ $json['Finalizacion (Automatico)'] }}",
+            "Estado (Automatico)": "={{ $json['Estado (Automatico)'] }}",
+            "Tiempo real de produccion (Automatico)": "={{ $json['Tiempo de producción real (Automatico)'] }}",
+            "Ultima Produccion (Automatico)": "={{ $json['Ultima Producción (automático)'] }}",
+            "Turno D (Automatico)": "={{ $json['Kilos Turno A'] }}",
+            "Turno E (Automatico)": "={{ $json['Kilos Turno B'] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Fecha de programación (Automatico)",
+              "displayName": "Fecha de programación (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "OT (Automatico)",
+              "displayName": "OT (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cliente (Automatico)",
+              "displayName": "Cliente (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Maquina (Automatico)",
+              "displayName": "Maquina (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Referencia (automatico)",
+              "displayName": "Referencia (automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos hechos (Automatico)",
+              "displayName": "Kilos hechos (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos programados (Automatico)",
+              "displayName": "Kilos programados (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos restantes (Automatico)",
+              "displayName": "Kilos restantes (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos pedidos (Automatico)",
+              "displayName": "Kilos pedidos (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cuantos turnos se usaran (Automatico)",
+              "displayName": "Cuantos turnos se usaran (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fecha sugerido de Inicio (Automatico)",
+              "displayName": "Fecha sugerido de Inicio (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tiempo real de produccion (Automatico)",
+              "displayName": "Tiempo real de produccion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tiempo estimado (Automatico)",
+              "displayName": "Tiempo estimado (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Ultima Produccion (Automatico)",
+              "displayName": "Ultima Produccion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Inicio (Automatico)",
+              "displayName": "Inicio (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Finalizacion (Automatico)",
+              "displayName": "Finalizacion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Estado (Automatico)",
+              "displayName": "Estado (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno D (Automatico)",
+              "displayName": "Turno D (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno E (Automatico)",
+              "displayName": "Turno E (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Observaciones finales",
+              "displayName": "Observaciones finales",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "a054a025-2996-4b4b-b407-3e224cef4fdb",
+      "name": "Escribir Simulador Extrusión",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        256,
+        128
+      ],
+      "executeOnce": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_SIMULADOR",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 851495163,
+          "mode": "list",
+          "cachedResultName": "Simulador Impresión",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_SIMULADOR/edit#gid=851495163"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha de programación (Automatico)": "={{ $json['Fecha de programación (Automatico)'] }}",
+            "OT (Automatico)": "={{ $json['OT (Automatico)'] }}",
+            "Cliente (Automatico)": "={{ $json['Cliente (Automatico)'] }}",
+            "Maquina (Automatico)": "={{ $json['Maquina (Automatico)'] }}",
+            "Referencia (automatico)": "={{ $json['Referencia (automatico)'] }}",
+            "Kilos hechos (Automatico)": "={{ $json['Kilos hechos (Automatico)'] }}",
+            "Kilos programados (Automatico)": "={{ $json['Kilos programados (Automatico)'] }}",
+            "Kilos restantes (Automatico)": "={{ $json['Kilos restantes (Automatico)'] }}",
+            "Kilos pedidos (Automatico)": "={{ $json['Kilos pedidos (Automatico)'] }}",
+            "Cuantos turnos se usaran (Automatico)": "={{ $json['Cuantos turnos se usaran (Automatico)'] }}",
+            "Fecha sugerido de Inicio (Automatico)": "={{ $json['Fecha sugerido de Inicio (Automatico)'] }}",
+            "Tiempo estimado (Automatico)": "={{ $json['Tiempo estimado (Automatico)'] }}",
+            "Inicio (Automatico)": "={{ $json['Inicio (Automatico)'] }}",
+            "Finalizacion (Automatico)": "={{ $json['Finalizacion (Automatico)'] }}",
+            "Estado (Automatico)": "={{ $json['Estado (Automatico)'] }}",
+            "Tiempo real de produccion (Automatico)": "={{ $json['Tiempo de producción real (Automatico)'] }}",
+            "Ultima Produccion (Automatico)": "={{ $json['Ultima Producción (automático)'] }}",
+            "Turno A (Automatico)": "={{ $json['Kilos Turno A'] }}",
+            "Turno B (Automatico)": "={{ $json['Kilos Turno B'] }}",
+            "Turno C (Automatico)": "={{ $json['Kilos Turno C'] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Fecha de programación (Automatico)",
+              "displayName": "Fecha de programación (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "OT (Automatico)",
+              "displayName": "OT (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cliente (Automatico)",
+              "displayName": "Cliente (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Maquina (Automatico)",
+              "displayName": "Maquina (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Referencia (automatico)",
+              "displayName": "Referencia (automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos hechos (Automatico)",
+              "displayName": "Kilos hechos (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos programados (Automatico)",
+              "displayName": "Kilos programados (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos restantes (Automatico)",
+              "displayName": "Kilos restantes (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos pedidos (Automatico)",
+              "displayName": "Kilos pedidos (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cuantos turnos se usaran (Automatico)",
+              "displayName": "Cuantos turnos se usaran (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fecha sugerido de Inicio (Automatico)",
+              "displayName": "Fecha sugerido de Inicio (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tiempo real de produccion (Automatico)",
+              "displayName": "Tiempo real de produccion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tiempo estimado (Automatico)",
+              "displayName": "Tiempo estimado (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Ultima Produccion (Automatico)",
+              "displayName": "Ultima Produccion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Inicio (Automatico)",
+              "displayName": "Inicio (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Finalizacion (Automatico)",
+              "displayName": "Finalizacion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Estado (Automatico)",
+              "displayName": "Estado (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno A (Automatico)",
+              "displayName": "Turno A (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno B (Automatico)",
+              "displayName": "Turno B (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno C (Automatico)",
+              "displayName": "Turno C (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Observaciones finales",
+              "displayName": "Observaciones finales",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "406bd033-91be-4a6a-a489-faf81490c6d5",
+      "name": "Escribir Simulador impresion",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        256,
+        336
+      ],
+      "executeOnce": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_SIMULADOR",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Simulador Sellado",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_SIMULADOR/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha de programación (Automatico)": "={{ $json['Fecha de programación (Automatico)'] }}",
+            "OT (Automatico)": "={{ $json['OT (Automatico)'] }}",
+            "Cliente (Automatico)": "={{ $json['Cliente (Automatico)'] }}",
+            "Maquina (Automatico)": "={{ $json['Maquina (Automatico)'] }}",
+            "Referencia (automatico)": "={{ $json['Referencia (automatico)'] }}",
+            "Kilos hechos (Automatico)": "={{ $json['Kilos hechos (Automatico)'] }}",
+            "Kilos programados (Automatico)": "={{ $json['Kilos programados (Automatico)'] }}",
+            "Kilos restantes (Automatico)": "={{ $json['Kilos restantes (Automatico)'] }}",
+            "Kilos pedidos (Automatico)": "={{ $json['Kilos pedidos (Automatico)'] }}",
+            "Cuantos turnos se usaran (Automatico)": "={{ $json['Cuantos turnos se usaran (Automatico)'] }}",
+            "Fecha sugerido de Inicio (Automatico)": "={{ $json['Fecha sugerido de Inicio (Automatico)'] }}",
+            "Tiempo estimado (Automatico)": "={{ $json['Tiempo estimado (Automatico)'] }}",
+            "Inicio (Automatico)": "={{ $json['Inicio (Automatico)'] }}",
+            "Finalizacion (Automatico)": "={{ $json['Finalizacion (Automatico)'] }}",
+            "Estado (Automatico)": "={{ $json['Estado (Automatico)'] }}",
+            "Tiempo real de produccion (Automatico)": "={{ $json[\"Tiempo de producción real (Automatico)\"] }}",
+            "Ultima Produccion (Automatico)": "={{ $json[\"Ultima Producción (automático)\"] }}",
+            "Turno A (Automatico)": "={{ $json[\"Kilos Turno A\"] }}",
+            "Turno B (Automatico)": "={{ $json[\"Kilos Turno B\"] }}",
+            "Turno C (Automatico)": "={{ $json[\"Kilos Turno C\"] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Fecha de programación (Automatico)",
+              "displayName": "Fecha de programación (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "OT (Automatico)",
+              "displayName": "OT (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cliente (Automatico)",
+              "displayName": "Cliente (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Maquina (Automatico)",
+              "displayName": "Maquina (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Referencia (automatico)",
+              "displayName": "Referencia (automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos hechos (Automatico)",
+              "displayName": "Kilos hechos (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos programados (Automatico)",
+              "displayName": "Kilos programados (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos restantes (Automatico)",
+              "displayName": "Kilos restantes (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Kilos pedidos (Automatico)",
+              "displayName": "Kilos pedidos (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cuantos turnos se usaran (Automatico)",
+              "displayName": "Cuantos turnos se usaran (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fecha sugerido de Inicio (Automatico)",
+              "displayName": "Fecha sugerido de Inicio (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tiempo real de produccion (Automatico)",
+              "displayName": "Tiempo real de produccion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tiempo estimado (Automatico)",
+              "displayName": "Tiempo estimado (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Ultima Produccion (Automatico)",
+              "displayName": "Ultima Produccion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Inicio (Automatico)",
+              "displayName": "Inicio (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Finalizacion (Automatico)",
+              "displayName": "Finalizacion (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Estado (Automatico)",
+              "displayName": "Estado (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno A (Automatico)",
+              "displayName": "Turno A (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno B (Automatico)",
+              "displayName": "Turno B (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno C (Automatico)",
+              "displayName": "Turno C (Automatico)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Observaciones finales",
+              "displayName": "Observaciones finales",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "52927ccd-d29a-403d-86ca-f70c1ea2955c",
+      "name": "Escribir Simulador Sellado",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        256,
+        528
+      ],
+      "executeOnce": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// La eficiencia ya fue guardada en static data por el nodo \"Guardar eficiencia en static\"\nconst mapaKgHora = $getWorkflowStaticData('global').mapeoMaquinasKgHora || {};\n\n// Programaciones desde la consulta SQL\nconst programaciones = $input.all()\n  .map(item => item.json)\n  .filter(obj => obj['Fecha de programación (Automatico)'] !== undefined);\n\nconst grupos = {};\nfor (const prog of programaciones) {\n  const nombreMaquina = (prog['Maquina (Automatico)'] || '').trim();\n  if (!grupos[nombreMaquina]) grupos[nombreMaquina] = [];\n  grupos[nombreMaquina].push(prog);\n}\n\nconst resultados = [];\nconst ahora = new Date();\n\n// ========== FUNCIÓN PARA FORMATEAR EN ISO 8601 (solo fecha) ==========\nconst fmtFecha = (d) => {\n  const year = d.getFullYear();\n  const month = String(d.getMonth() + 1).padStart(2, '0');\n  const day = String(d.getDate()).padStart(2, '0');\n  return `${year}-${month}-${day}`;\n};\n\n// Función para obtener solo la fecha de un timestamp (string o Date) en YYYY-MM-DD\nconst aFecha = (val) => {\n  if (!val) return '';\n  const d = new Date(val);\n  if (isNaN(d.getTime())) return '';\n  return fmtFecha(d);\n};\n\nfor (const [nombreMaquina, tareas] of Object.entries(grupos)) {\n  tareas.sort((a, b) => \n    new Date(a['Inicio (Automatico)'] || a['Fecha de programación (Automatico)']) - \n    new Date(b['Inicio (Automatico)'] || b['Fecha de programación (Automatico)'])\n  );\n  const kgHora = mapaKgHora[nombreMaquina.toLowerCase()] || 100;\n  let fechaOcupada = new Date(ahora);\n\n  // Determinar si es área de extrusión (para combinar turnos B y C)\n  const esExtrusion = nombreMaquina.toLowerCase().includes('extrusora');\n\n  for (const prog of tareas) {\n    const kilosHechos = parseFloat(prog['Kilos hechos (Automatico)']) || 0;\n    const kilosProgramados = parseFloat(prog['Kilos programados (Automatico)']) || 0;\n    const kilosPedidos = parseFloat(prog['Kilos pedidos (Automatico)']) || 0;\n\n    const inicioStr = prog['Inicio (Automatico)'] || prog['Fecha de programación (Automatico)'];\n    const finStr = prog['Finalizacion (Automatico)'] || prog['Fin Planeado (Automatico)'] || prog['Fecha de programación (Automatico)'];\n    if (!inicioStr || !finStr) continue;\n\n    const inicioOriginal = new Date(inicioStr);\n    const finOriginal = new Date(finStr);\n    if (isNaN(inicioOriginal.getTime())) continue;\n\n    const fechaProgramacion = new Date(prog['Fecha de programación (Automatico)']);\n    const kilosRestantes = Math.max(kilosProgramados - kilosHechos, 0);\n    const horasNecesarias = kgHora > 0 ? kilosProgramados / kgHora : 0;\n    const turnos = Math.ceil(horasNecesarias / 8);\n    const fechaSugerida = new Date(fechaOcupada);\n    const finSugerido = new Date(fechaSugerida.getTime() + horasNecesarias * 60 * 60 * 1000);\n    fechaOcupada = finSugerido;\n\n    const ultimaProduccion = aFecha(prog['Ultima Producción (automático)']);\n\n    // ----- NUEVOS CAMPOS DE TURNO (con ajuste para extrusión) -----\n    let kilosTurnoA = parseFloat(prog['Kilos Turno A']) || 0;\n    let kilosTurnoB = parseFloat(prog['Kilos Turno B']) || 0;\n    let kilosTurnoC = parseFloat(prog['Kilos Turno C']) || 0;\n\n    if (esExtrusion) {\n      // En extrusión solo hay dos turnos: A y B. El Turno C (Turno 3) se suma al Turno B.\n      kilosTurnoB += kilosTurnoC;\n      kilosTurnoC = 0;\n    }\n\n    resultados.push({\n      json: {\n        'Fecha de programación (Automatico)': fmtFecha(fechaProgramacion),\n        'OT (Automatico)': prog['OT (Automatico)'] || '',\n        'Cliente (Automatico)': prog['Cliente (Automatico)'] || '',\n        'Maquina (Automatico)': nombreMaquina,\n        'Referencia (automatico)': prog['Referencia (automatico)'] || '',\n        'Kilos hechos (Automatico)': kilosHechos,\n        'Tiempo de producción real (Automatico)': parseFloat(prog['Tiempo de producción real (Automatico)']) || 0,\n        'Kilos programados (Automatico)': kilosProgramados,\n        'Kilos restantes (Automatico)': kilosRestantes,\n        'Kilos pedidos (Automatico)': kilosPedidos,\n        'Cuantos turnos se usaran (Automatico)': turnos,\n        'Fecha sugerido de Inicio (Automatico)': fmtFecha(fechaSugerida),\n        'Tiempo estimado (Automatico)': parseFloat(horasNecesarias.toFixed(2)),\n        'Inicio (Automatico)': fmtFecha(inicioOriginal),\n        'Finalizacion (Automatico)': fmtFecha(finOriginal),\n        'Estado (Automatico)': prog['Estado (Automatico)'] || 'En Proceso',\n        'Ultima Producción (automático)': ultimaProduccion,\n        'Observaciones finales': prog['Observaciones finales'] || '',\n        'Kilos Turno A': kilosTurnoA,\n        'Kilos Turno B': kilosTurnoB,\n        'Kilos Turno C': kilosTurnoC\n      }\n    });\n  }\n}\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        336
+      ],
+      "id": "c18840ec-90ca-465f-979b-39c906a64444",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -3376,
+        352
+      ],
+      "id": "262746ed-6714-4811-8785-993c406d0a4d",
+      "name": "Disparador"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "60e9af51-ae66-42d8-a58d-c13fc6a2f368",
+              "leftValue": "={{ $json.Creado_Programacion }}",
+              "rightValue": "/2026",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -2096,
+        352
+      ],
+      "id": "5636bef5-2f25-4520-819b-9df8c2bd9c0b",
+      "name": "Filtro del año 2026"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT nombre, kg_hora FROM public.maquinas WHERE kg_hora IS NOT NULL;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1104,
+        176
+      ],
+      "id": "9a435e87-e279-4e32-a4c7-c71be29a2588",
+      "name": "Obtener tiempos de maquina",
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "0dE0OrBLiP7gHFHs",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/0dE0OrBLiP7gHFHs",
+          "cachedResultName": "Sincronizar tiempos de máquina (kilos reales)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -1328,
+        336
+      ],
+      "id": "4002f8dd-38dc-4a69-b722-7fafb2072c02",
+      "name": "Sincronizar tiempos maquina",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "qWrohjslvwe1NLBw",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/qWrohjslvwe1NLBw",
+          "cachedResultName": "Sincronizar paros"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -1328,
+        176
+      ],
+      "id": "b2271c83-d15a-472e-93c7-b240b0cdd54c",
+      "name": "Call 'Sincronizar paros'",
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "UbEXSunWaDBxXl3C",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/UbEXSunWaDBxXl3C",
+          "cachedResultName": "Sincronizar Órdenes de Trabajo (OTs)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -2912,
+        352
+      ],
+      "id": "7a750160-5af8-45e6-9b31-307403025ca6",
+      "name": "Sincronizar OT's",
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "$getWorkflowStaticData('global').programacionesProcesadas = [];\nreturn [{ json: { limpio: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3136,
+        352
+      ],
+      "id": "19ed4ab5-8fba-4fc3-9dd2-2592fef49044",
+      "name": "Limpiar lista de IDs procesados"
+    },
+    {
+      "parameters": {
+        "jsCode": "const idsProcesados = $getWorkflowStaticData('global').programacionesProcesadas || [];\n\nif (idsProcesados.length === 0) {\n  // Si no hay IDs, no generamos DELETE para evitar borrar todo\n  return [{ json: { sql: null } }];\n}\n\nconst lista = idsProcesados.map(id => `'${String(id).replace(/'/g, \"''\")}'`).join(', ');\nconst sql = `DELETE FROM public.programaciones WHERE legacy_programacion_id NOT IN (${lista})`;\n\nreturn [{ json: { sql } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        176
+      ],
+      "id": "e59ed8eb-aa78-4a5d-84a2-c5c3c16b9292",
+      "name": "Generar delete masivo"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -448,
+        176
+      ],
+      "id": "e7181748-84f7-443d-a7b6-aa16dab2e5d4",
+      "name": "Ejecutar Delete",
+      "alwaysOutputData": true,
+      "executeOnce": false,
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const eficiencia = $input.all().map(i => i.json);\nconst mapaKgHora = {};\neficiencia.forEach(m => {\n  if (m.nombre) mapaKgHora[m.nombre.trim().toLowerCase()] = parseFloat(m.kg_hora) || 100;\n});\n$getWorkflowStaticData('global').mapeoMaquinasKgHora = mapaKgHora;\nreturn eficiencia;  // pasamos los mismos datos hacia el siguiente nodo"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        176
+      ],
+      "id": "5ec97323-c560-46a1-b97b-f7733c0d88d0",
+      "name": "Guardar eficiencia en static"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "programaciones",
+          "mode": "list",
+          "cachedResultName": "programaciones"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1184,
+        -624
+      ],
+      "id": "857fad3a-422e-42e0-b4c2-facc7df1f29b",
+      "name": "Select rows from a table",
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "5riZDZ3B0Us8GkMl",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/5riZDZ3B0Us8GkMl",
+          "cachedResultName": "Historial de observaciones"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        256,
+        -80
+      ],
+      "id": "77a59dd9-055c-4565-b9db-d9b9a375408e",
+      "name": "Crear historial y limpiar",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cargar mapeos": {
+      "main": [
+        [
+          {
+            "node": "Guardar mapeos en static data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar mapeos en static data": {
+      "main": [
+        [
+          {
+            "node": "Leer programación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer programación": {
+      "main": [
+        [
+          {
+            "node": "Filtro del año 2026",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lotes de 50 filas": {
+      "main": [
+        [
+          {
+            "node": "Call 'Sincronizar paros'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sincronizar tiempos maquina",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Crear upsert masivo por lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear upsert masivo por lote": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar upsert (lote)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecutar upsert (lote)": {
+      "main": [
+        [
+          {
+            "node": "Lotes de 50 filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener datos para simulador": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar por área": {
+      "main": [
+        [
+          {
+            "node": "Escribir Simulador Extrusión",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Crear historial y limpiar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escribir Simulador impresion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escribir Simulador Sellado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribir Simulador Extrusión": {
+      "main": [
+        []
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Separar por área",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparador": {
+      "main": [
+        [
+          {
+            "node": "Limpiar lista de IDs procesados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtro del año 2026": {
+      "main": [
+        [
+          {
+            "node": "Lotes de 50 filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener tiempos de maquina": {
+      "main": [
+        [
+          {
+            "node": "Guardar eficiencia en static",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sincronizar tiempos maquina": {
+      "main": [
+        [
+          {
+            "node": "Obtener datos para simulador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Sincronizar paros'": {
+      "main": [
+        [
+          {
+            "node": "Obtener tiempos de maquina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sincronizar OT's": {
+      "main": [
+        [
+          {
+            "node": "Cargar mapeos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar lista de IDs procesados": {
+      "main": [
+        [
+          {
+            "node": "Sincronizar OT's",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar delete masivo": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecutar Delete": {
+      "main": [
+        []
+      ]
+    },
+    "Guardar eficiencia en static": {
+      "main": [
+        [
+          {
+            "node": "Generar delete masivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "America/Bogota",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "699715aa-7339-4ceb-8e8a-b6bc5d3761ef",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "1Usqj81sRbGuqVPS",
+  "tags": []
+}

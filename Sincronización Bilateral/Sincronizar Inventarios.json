@@ -1,0 +1,1338 @@
+{
+  "name": "Sincronizar Inventarios",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -2672,
+        272
+      ],
+      "id": "79483777-65aa-43e5-b6d4-80335e474aa8",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1252223678,
+          "mode": "list",
+          "cachedResultName": "Inventario Seguridad"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -2464,
+        272
+      ],
+      "id": "b5bad1e4-1aaf-48ae-aa5c-17d2808c4cfc",
+      "name": "Leer Stock Seguridad",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\n\n// Obtenemos la última fila si existe\nconst lastRow = rows.length > 0 ? rows[rows.length - 1] : null;\n\n// Extraemos el valor numérico de la columna \"Stock Restante\" de esa última fila\nconst lastStock = lastRow ? Number(lastRow[\"Stock Restante\"]) || 0 : 0;\n\n// Guardamos el stock real en la memoria del flujo\n$getWorkflowStaticData('global').stockSeguridad = lastStock;\n\nreturn [{ json: { init: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2256,
+        272
+      ],
+      "id": "76019387-ffcd-47ae-87b6-7ebcc4a2fee9",
+      "name": "Guardar Stock Seguridad"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 454836705,
+          "mode": "list",
+          "cachedResultName": "Inventario Resellable"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -2048,
+        272
+      ],
+      "id": "05060974-649f-465d-9bc9-8a500601dd69",
+      "name": "Leer Stock Resellable",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\n\n// Obtenemos la última fila si existe\nconst lastRow = rows.length > 0 ? rows[rows.length - 1] : null;\n\n// Extraemos el valor numérico de la columna \"Stock Restante\" de esa última fila\nconst lastStock = lastRow ? Number(lastRow[\"Stock Restante\"]) || 0 : 0;\n\n// Guardamos el stock real en la memoria del flujo\n$getWorkflowStaticData('global').stockResellable = lastStock;\n\nreturn [{ json: { init: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        272
+      ],
+      "id": "71e42296-3a7d-4590-97e0-118525abebb3",
+      "name": "Guardar Stock Resellable"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    \"hoja\" : \"Ingreso de cintas\"\n  },\n  {\n    \"hoja\" : \"Egresos De Cintas\"\n  }\n]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1632,
+        432
+      ],
+      "id": "a3c67918-31e0-4308-a82a-762850f1ef6b",
+      "name": "Sheets"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1424,
+        432
+      ],
+      "id": "a1ca14cc-52d6-4474-924c-0f397d00c50d",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.hoja }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1168,
+        448
+      ],
+      "id": "8c89afc7-14c2-472f-bae8-d8a7f37695c9",
+      "name": "Get row(s) in sheet",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obtenemos el nombre de la hoja desde el primer ítem del loop\nconst hoja = $('Loop Over Items').first().json.hoja || '';\n\n// Determinamos el tipo de movimiento según la hoja\nlet tipoMovimiento = 'Desconocido';\nconst hojaLower = hoja.toLowerCase();\nif (hojaLower.includes('ingreso de cintas')) {\n  tipoMovimiento = 'Ingreso';\n} else if (hojaLower.includes('egresos de cintas')) {\n  tipoMovimiento = 'Egreso';\n}\n\nconst resultados = $input.all().map(item => {\n  const data = item.json;\n\n  // CORRECCIÓN: Evaluación individual por cada fila\n  const reportada = data.Reportada || '';\n  let ingresarInventario = true;\n\n  if (reportada.includes(\"SI\")) {\n    ingresarInventario = false;\n  }\n\n  // Extraer fecha y hora de \"Marca temporal\"\n  const marcaTemporal = data['Marca temporal'] || '';\n  const [fecha, ...horaParts] = marcaTemporal.split(' ');\n  const hora = horaParts.join(' ') || '';\n\n  // Proveedor y cantidad mapeados desde campos originales\n  const proveedor = data['Que proveedor?'] || data['¿Que proveedor?'] || '';\n  const cantidad = data['Cuantas cintas vas a reportar de entrada?'] \n                || data['Cuantas cintas vas a reportar de salida?'] \n                || 0;\n\n  // Tipo de cinta normalizado\n  const tipoCintaRaw = data['Cinta Resellable o de Seguridad?'] || '';\n  let tipoCinta = '';\n  const tipoCintaLower = tipoCintaRaw.toLowerCase();\n  if (tipoCintaLower === 'seguridad') {\n    tipoCinta = 'Seguridad';\n  } else if (tipoCintaLower === 'resellable') {\n    tipoCinta = 'Resellable';\n  } else if (tipoCintaRaw) {\n    tipoCinta = tipoCintaRaw;\n  }\n\n  return {\n    json: {\n      'key' : data.row_number,\n      'Fecha de Movimiento': fecha,\n      'Hora Movimiento': hora,\n      'Tipo de Movimiento': tipoMovimiento,\n      'Proveedor': proveedor,\n      'Cantidad': cantidad,\n      '¿Quien Reporta?': data['¿Quién Reporta?'] || data['¿Quien Reporta?'] || '',\n      'tipo_cinta': tipoCinta,\n      'Ingresar Inventario' : ingresarInventario\n    }\n  };\n});\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        448
+      ],
+      "id": "08fc468c-170f-4d43-b54f-98af8af3f3a4",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        416
+      ],
+      "id": "d71d49ef-7d72-49ce-a1ef-f52d4e43f35b",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo_cinta }}",
+                    "rightValue": "Seguridad",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "b7f84ea8-4a8a-4da3-8cf2-f8088c82fd49"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Seguridad"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0ff46941-f077-47e0-9062-83b3ad252ee0",
+                    "leftValue": "={{ $json.tipo_cinta }}",
+                    "rightValue": "Resellable",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Resellable"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -528,
+        416
+      ],
+      "id": "7358d54a-73ed-47b9-8a7e-898b5a62891f",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "03df8c47-5cbe-4051-98ce-95ba87aba1b8",
+              "leftValue": "={{ $json[\"Ingresar Inventario\"] }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -320,
+        240
+      ],
+      "id": "73c82f20-0cfc-4ad6-8a21-5ac0b3149a77",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nlet stock = staticData.stockSeguridad ?? 0;\n\n// Iteramos por TODOS los registros entrantes en lugar de usar .first()\nconst resultados = $input.all().map(item => {\n  const data = item.json;\n  const cantidad = Number(data.Cantidad) || 0;\n  const tipo = data[\"Tipo de Movimiento\"];\n\n  if (tipo === 'Ingreso') {\n    stock += cantidad;\n  } else if (tipo === 'Egreso') {\n    stock -= cantidad;\n  }\n\n  return {\n    json: {\n      ...data,\n      \"Stock Restante\": stock\n    }\n  };\n});\n\n// Guardamos el stock final acumulado en la variable global estática\nstaticData.stockSeguridad = stock;\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        240
+      ],
+      "id": "50cf5342-08d3-4efd-8fbb-149855e7debb",
+      "name": "Calcular Stock Seguridad"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1252223678,
+          "mode": "list",
+          "cachedResultName": "Inventario Seguridad"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha de Movimiento": "={{ $json[\"Fecha de Movimiento\"] }}",
+            "Hora Movimiento": "={{ $json[\"Hora Movimiento\"] }}",
+            "Tipo de Movimiento": "={{ $json[\"Tipo de Movimiento\"] }}",
+            "Proveedor": "={{ $json.Proveedor }}",
+            "Cantidad": "={{ $json.Cantidad }}",
+            "¿Quien Reporta?": "={{ $json[\"¿Quien Reporta?\"] }}",
+            "Stock Restante": "={{ $json[\"Stock Restante\"] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Fecha de Movimiento",
+              "displayName": "Fecha de Movimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Hora Movimiento",
+              "displayName": "Hora Movimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tipo de Movimiento",
+              "displayName": "Tipo de Movimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Proveedor",
+              "displayName": "Proveedor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cantidad",
+              "displayName": "Cantidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Quien Reporta?",
+              "displayName": "¿Quien Reporta?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stock Restante",
+              "displayName": "Stock Restante",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        96,
+        240
+      ],
+      "id": "08dcda7f-a863-4176-8557-558f16c8b68a",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ec11098c-8daa-4ec9-8f03-89cc3d4ab78b",
+              "leftValue": "={{ $json[\"Tipo de Movimiento\"] }}",
+              "rightValue": "Ingreso",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        304,
+        240
+      ],
+      "id": "9675b574-5b5f-4b6a-9e8d-0072a8f64fc5",
+      "name": "If3"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1856955445,
+          "mode": "list",
+          "cachedResultName": "Ingreso de cintas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS/edit#gid=1856955445"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reportada": "SI",
+            "row_number": "={{ $('Calcular Stock Seguridad').item.json.key }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Marca temporal",
+              "displayName": "Marca temporal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cinta Resellable o de Seguridad?",
+              "displayName": "Cinta Resellable o de Seguridad?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Que proveedor?",
+              "displayName": "Que proveedor?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cuantas cintas vas a reportar de entrada?",
+              "displayName": "Cuantas cintas vas a reportar de entrada?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Quién Reporta?",
+              "displayName": "¿Quién Reporta?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reportada",
+              "displayName": "Reportada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        512,
+        112
+      ],
+      "id": "0c0ebe22-7ffd-4e4c-8ebf-8e91e94f2c3e",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 709683608,
+          "mode": "list",
+          "cachedResultName": "Egresos De Cintas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS/edit#gid=709683608"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reportada": "SI",
+            "row_number": "={{ $('Calcular Stock Seguridad').item.json.key }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Marca temporal",
+              "displayName": "Marca temporal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cinta Resellable o de Seguridad?",
+              "displayName": "Cinta Resellable o de Seguridad?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Que proveedor?",
+              "displayName": "Que proveedor?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cuantas cintas vas a reportar de salida?",
+              "displayName": "Cuantas cintas vas a reportar de salida?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Quién Reporta?",
+              "displayName": "¿Quién Reporta?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reportada",
+              "displayName": "Reportada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        512,
+        304
+      ],
+      "id": "c176006d-b5be-4d80-999e-f9a7cacb8f24",
+      "name": "Update row in sheet2",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "03df8c47-5cbe-4051-98ce-95ba87aba1b8",
+              "leftValue": "={{ $json[\"Ingresar Inventario\"] }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -320,
+        608
+      ],
+      "id": "f65a68da-627f-4cd7-8b0d-de81b6a03e04",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nlet stock = staticData.stockResellable ?? 0;\n\n// Iteramos por TODOS los registros entrantes\nconst resultados = $input.all().map(item => {\n  const data = item.json;\n  const cantidad = Number(data.Cantidad) || 0;\n  const tipo = data[\"Tipo de Movimiento\"];\n\n  if (tipo === 'Ingreso') {\n    stock += cantidad;\n  } else if (tipo === 'Egreso') {\n    stock -= cantidad;\n  }\n\n  return {\n    json: {\n      ...data,\n      \"Stock Restante\": stock\n    }\n  };\n});\n\n// Guardamos el stock final acumulado en la variable global estática\nstaticData.stockResellable = stock;\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        608
+      ],
+      "id": "befbd7df-e8d7-4383-8810-e80abc7e8ce7",
+      "name": "Calcular Stock Resellable"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 454836705,
+          "mode": "list",
+          "cachedResultName": "Inventario Resellable"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha de Movimiento": "={{ $json[\"Fecha de Movimiento\"] }}",
+            "Hora Movimiento": "={{ $json[\"Hora Movimiento\"] }}",
+            "Tipo de Movimiento": "={{ $json[\"Tipo de Movimiento\"] }}",
+            "Proveedor": "={{ $json.Proveedor }}",
+            "Cantidad": "={{ $json.Cantidad }}",
+            "¿Quien Reporta?": "={{ $json[\"¿Quien Reporta?\"] }}",
+            "Stock Restante": "={{ $json[\"Stock Restante\"] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Fecha de Movimiento",
+              "displayName": "Fecha de Movimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Hora Movimiento",
+              "displayName": "Hora Movimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tipo de Movimiento",
+              "displayName": "Tipo de Movimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Proveedor",
+              "displayName": "Proveedor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cantidad",
+              "displayName": "Cantidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Quien Reporta?",
+              "displayName": "¿Quien Reporta?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stock Restante",
+              "displayName": "Stock Restante",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        96,
+        608
+      ],
+      "id": "91d957f3-29df-4073-8fda-0a991aa9d4d4",
+      "name": "Append row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c6817e76-bda8-4198-ade5-8f146b8e53af",
+              "leftValue": "={{ $json[\"Tipo de Movimiento\"] }}",
+              "rightValue": "Egreso",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        304,
+        608
+      ],
+      "id": "10b2a9ac-cb18-44db-b1f9-74bac697b843",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 709683608,
+          "mode": "list",
+          "cachedResultName": "Egresos De Cintas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS/edit#gid=709683608"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reportada": "SI",
+            "row_number": "={{ $('Calcular Stock Resellable').item.json.key }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Marca temporal",
+              "displayName": "Marca temporal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cinta Resellable o de Seguridad?",
+              "displayName": "Cinta Resellable o de Seguridad?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Que proveedor?",
+              "displayName": "Que proveedor?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cuantas cintas vas a reportar de salida?",
+              "displayName": "Cuantas cintas vas a reportar de salida?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "¿Quién Reporta?",
+              "displayName": "¿Quién Reporta?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reportada",
+              "displayName": "Reportada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        512,
+        512
+      ],
+      "id": "3306a843-c93d-4171-b087-0c2d76b8fefa",
+      "name": "Update row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1856955445,
+          "mode": "list",
+          "cachedResultName": "Ingreso de cintas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_INVENTARIO_CINTAS/edit#gid=1856955445"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Reportada": "SI",
+            "row_number": "={{ $('Calcular Stock Resellable').item.json.key }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Marca temporal",
+              "displayName": "Marca temporal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cinta Resellable o de Seguridad?",
+              "displayName": "Cinta Resellable o de Seguridad?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Que proveedor?",
+              "displayName": "Que proveedor?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cuantas cintas vas a reportar de entrada?",
+              "displayName": "Cuantas cintas vas a reportar de entrada?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "¿Quién Reporta?",
+              "displayName": "¿Quién Reporta?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reportada",
+              "displayName": "Reportada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        512,
+        704
+      ],
+      "id": "513b9f2c-93c9-472d-91cb-fe57827f5003",
+      "name": "Update row in sheet3",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Leer Stock Seguridad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Stock Seguridad": {
+      "main": [
+        [
+          {
+            "node": "Guardar Stock Seguridad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Stock Seguridad": {
+      "main": [
+        [
+          {
+            "node": "Leer Stock Resellable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Stock Resellable": {
+      "main": [
+        [
+          {
+            "node": "Guardar Stock Resellable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Stock Resellable": {
+      "main": [
+        [
+          {
+            "node": "Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Calcular Stock Seguridad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular Stock Seguridad": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "If3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update row in sheet2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Calcular Stock Resellable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular Stock Resellable": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet1": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update row in sheet3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ccf377c2-673e-42d5-9ff9-b36ddf4944c5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "Gw757v68b13fHRPG",
+  "tags": []
+}

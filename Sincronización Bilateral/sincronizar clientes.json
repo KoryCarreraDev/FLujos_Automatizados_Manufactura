@@ -1,0 +1,169 @@
+{
+  "name": "sincronizar clientes",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "98d33a89-b21a-46a2-886b-dd4d5e01ad35",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_CLIENTES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "clientes",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_CLIENTES/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        208,
+        0
+      ],
+      "id": "3c53a3a0-0bbe-4131-879b-429ebd224cdb",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const loteItems = $input.all().map(item => item.json);\n\n// Funciones auxiliares\nconst escape = (v) => String(v).replace(/'/g, \"''\");\n\nconst formatTimestamp = (fechaStr) => {\n  if (!fechaStr || typeof fechaStr !== 'string' || fechaStr.trim() === '') return 'NULL';\n  const partes = fechaStr.split(' ');\n  const fecha = partes[0];\n  const hora = partes[1] || '00:00:00';\n  const [d, m, a] = fecha.split('/');\n  if (!d || !m || !a) return 'NULL';\n  return `'${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')} ${hora}'`;\n};\n\nconst parseInteger = (val) => {\n  if (val === undefined || val === null || val === '') return '0';\n  const num = parseInt(val, 10);\n  return isNaN(num) ? '0' : num;\n};\n\nconst values = loteItems.map(item => {\n  const legacyId = escape(item.ID_Cliente || '');\n  const creador = item.Creador_Cliente ? `'${escape(item.Creador_Cliente)}'` : 'NULL';\n  const creadoEn = formatTimestamp(item.Creado_Cliente);\n  const modificador = item.Modificador_Cliente ? `'${escape(item.Modificador_Cliente)}'` : 'NULL';\n  const modificadoEn = formatTimestamp(item.Modificado_Cliente);\n  const identificacion = item.Identificacion_Cliente ? `'${escape(item.Identificacion_Cliente)}'` : 'NULL';\n  const tipoId = item.TipoID_Cliente ? `'${escape(item.TipoID_Cliente)}'` : 'NULL';\n  const nombre = item.Nombre_Cliente ? `'${escape(item.Nombre_Cliente)}'` : 'NULL';\n  const ciudad = item.Ciudad_Cliente ? `'${escape(item.Ciudad_Cliente)}'` : 'NULL';\n  const direccion = item.Direccion_Cliente ? `'${escape(item.Direccion_Cliente)}'` : 'NULL';\n  const mostrarContacto = item.shwContacto_Cliente ? `'${escape(item.shwContacto_Cliente)}'` : 'NULL';\n  const contacto = item.Contacto_Cliente ? `'${escape(item.Contacto_Cliente)}'` : 'NULL';\n  const telefono = item.TelefonoContacto_Cliente !== undefined && item.TelefonoContacto_Cliente !== null ? `'${escape(String(item.TelefonoContacto_Cliente))}'` : 'NULL';\n  const email = item.Email_Cliente ? `'${escape(item.Email_Cliente)}'` : 'NULL';\n  const version = parseInteger(item.Update_Cliente);\n\n  return `('${legacyId}', ${creador}, ${creadoEn}, ${modificador}, ${modificadoEn}, ${identificacion}, ${tipoId}, ${nombre}, ${ciudad}, ${direccion}, ${mostrarContacto}, ${contacto}, ${telefono}, ${email}, ${version})`;\n}).join(', ');\n\nif (!values) {\n  return [{ json: { sql: '', status: 'sin_datos' } }];\n}\n\nconst sql = `INSERT INTO public.clientes \n  (legacy_id, creador, creado_en, modificador, modificado_en, identificacion, tipo_identificacion, nombre, ciudad, direccion, mostrar_contacto, contacto, telefono_contacto, email, version)\nVALUES ${values}\nON CONFLICT (legacy_id) DO UPDATE SET\n  creador = EXCLUDED.creador,\n  creado_en = EXCLUDED.creado_en,\n  modificador = EXCLUDED.modificador,\n  modificado_en = EXCLUDED.modificado_en,\n  identificacion = EXCLUDED.identificacion,\n  tipo_identificacion = EXCLUDED.tipo_identificacion,\n  nombre = EXCLUDED.nombre,\n  ciudad = EXCLUDED.ciudad,\n  direccion = EXCLUDED.direccion,\n  mostrar_contacto = EXCLUDED.mostrar_contacto,\n  contacto = EXCLUDED.contacto,\n  telefono_contacto = EXCLUDED.telefono_contacto,\n  email = EXCLUDED.email,\n  version = EXCLUDED.version;`;\n\nreturn [{ json: { sql } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        16
+      ],
+      "id": "949d9090-4deb-4896-b1eb-f883bc7603c4",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "batchSize": 50,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        400,
+        0
+      ],
+      "id": "52837805-de83-475c-ba9f-d2f19feea067",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        848,
+        16
+      ],
+      "id": "fc255e47-14f9-434f-ab82-6957b0a67ac0",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "8192b0eb-c6a6-4b74-a671-c9406e9fcb45",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "PgQLDFB6kSLoLtm8",
+  "tags": []
+}

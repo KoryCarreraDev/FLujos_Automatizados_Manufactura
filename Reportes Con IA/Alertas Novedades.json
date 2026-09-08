@@ -1,0 +1,286 @@
+{
+  "name": "Alertas Novedades",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "e04926c5-0765-4296-9b23-b2bf89e9756f",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_NOVEDADES",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 864152737,
+          "mode": "list",
+          "cachedResultName": "Novedades",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_NOVEDADES/edit#gid=864152737"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        208,
+        0
+      ],
+      "id": "d39617b0-1687-4ac3-b69a-78c37d82192f",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com, example@example.com",
+        "subject": "={{ (() => {\n\nconst texto =\n  $node[\"AI Agent\"].json.text ||\n  '';\n\nconst rojos =\n  (texto.match(/🚨/g) || []).length;\n\nconst naranjas =\n  (texto.match(/⚠️/g) || []).length;\n\nif (rojos > 0) {\n  return `🚨 Resumen Ejecutivo de Mantenimiento - ${rojos} novedades críticas`;\n}\n\nif (naranjas > 0) {\n  return `⚠️ Resumen Ejecutivo de Mantenimiento - ${naranjas} novedades en seguimiento`;\n}\n\nreturn '✅ Resumen Ejecutivo de Mantenimiento';\n\n})() }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "bccList": "example@example.com, example@example.com, example@example.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1216,
+        64
+      ],
+      "id": "c267ed44-5d6a-4160-bf7f-7f70c61a3977",
+      "name": "Send a message",
+      "webhookId": "01fad7a6-3370-4e3b-98f1-3303432c220c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rojas = [], naranjas = [], verdes = [], grises = [];\n\nfor (const item of $input.all()) {\n  const nov = item.json;\n  const fechaSolucion = (nov['Fecha estimada de solución (Solo Mantenimiento)'] || '').trim();\n\n  // Si no hay fecha, va a GRIS pase lo que pase\n  if (fechaSolucion === '') {\n    grises.push(nov);\n    continue;\n  }\n\n  const semaforo = (nov['Semaforo (automatico)'] || '').toLowerCase().trim();\n  if (semaforo === 'rojo') {\n    rojas.push(nov);\n  } else if (semaforo === 'naranja') {\n    naranjas.push(nov);\n  } else {\n    verdes.push(nov);\n  }\n}\n\nconst formatear = (n) => {\n  return `- Máquina: ${n.Maquina || 'N/A'}\n  Responsable: ${n['Quien creó la novedad (Solo nombre)'] || 'No asignado'}\n  Fecha creación: ${n['Fecha de creacion (automatico)'] || 'N/A'}\n  Fecha est. solución: ${n['Fecha estimada de solución (Solo Mantenimiento)'] || 'No definida'}\n  Observaciones: ${n['Observaciones respecto a la novedad (Obligatorio)'] || 'Sin observaciones'}\n  ¿Falta repuesto?: ${n['¿Falta repuesto / s? ¿Cuales? (Mantenimiento)'] || 'No especificado'}`;\n};\n\nlet texto = '';\n\nif (rojas.length > 0) {\n  texto += '🚨 NOVEDADES CRÍTICAS (ROJO)\\n\\n';\n  rojas.forEach(n => { texto += formatear(n) + '\\n\\n'; });\n}\n\nif (naranjas.length > 0) {\n  texto += '⚠️ NOVEDADES PRÓXIMAS A VENCER (NARANJA)\\n\\n';\n  naranjas.forEach(n => { texto += formatear(n) + '\\n\\n'; });\n}\n\nif (grises.length > 0) {\n  texto += '⚪ NOVEDADES SIN FECHA DE SOLUCIÓN (GRIS)\\n\\n';\n  grises.forEach(n => { texto += formatear(n) + '\\n\\n'; });\n}\n\nif (verdes.length > 0) {\n  texto += '✅ NOVEDADES EN TIEMPO (VERDE)\\n\\n';\n  verdes.forEach(n => { texto += formatear(n) + '\\n\\n'; });\n}\n\nif (texto === '') {\n  texto = 'No hay novedades registradas en este período.';\n}\n\n// ← Esta es la línea que faltaba\nreturn [{ json: { prompt: texto } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "15a03407-e741-4d3a-aaaf-9ad99c4ab239",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres un analista de mantenimiento industrial.\n\nCon los datos proporcionados, elabora un **resumen ejecutivo breve** para el jefe de mantenimiento.\nEl objetivo es que pueda entender la situación en 2 minutos y actuar sin abrir el Excel.\n\nLos datos ya vienen agrupados por criticidad (🚨 ROJO, ⚪ GRIS, ✅ VERDE). No hay naranjas.\nNo cambies las categorías. No inventes información.\n\n**Reglas estrictas:**\n1. No repitas los datos uno por uno. Agrupa por máquina, responsable o tipo de falla.\n2. Destaca solo lo más relevante de cada categoría.\n3. Para ROJO: indica cuántas novedades hay, las máquinas afectadas y la acción inmediata sugerida.\n4. Para GRIS: indica que son novedades sin fecha de solución y que requieren programación urgente. Menciona cuántas son y qué áreas afectan.\n5. Para VERDE: resume en una frase el estado general (ej. \"6 novedades con fecha futura, sin criticidad inmediata\"). No las listes.\n6. Si no hay repuestos faltantes, omite esa sección.\n7. Las recomendaciones ejecutivas deben ser máximo 4 viñetas concretas y accionables.\n\n**Estructura del reporte (Markdown):**\n# Resumen Ejecutivo\n## 🚨 Situación Crítica\n## ⚪ Pendientes de Programación\n## ✅ En Plazo\n## 🔩 Repuestos (solo si hay faltantes)\n## 🎯 Acciones Recomendadas\n\nDATOS:\n{{ $json.prompt }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        592,
+        0
+      ],
+      "id": "b5cbc094-4915-4b3d-84bd-4e873bc86b62",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw =\n  $input.first().json.output ??\n  $input.first().json.text ??\n  $input.first().json.respuesta ??\n  '';\n\nfunction escapeHtml(value) {\n  return String(value)\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#39;');\n}\n\nfunction cleanMarkdown(md) {\n  let text = String(md || '')\n    .replace(/\\uFEFF/g, '')\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\t/g, '  ')\n    .replace(/[ \\t]+\\n/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .trim();\n\n  const wrapped = text.match(/^```(?:markdown|md)?\\s*([\\s\\S]*?)\\s*```$/i);\n  if (wrapped) {\n    text = wrapped[1].trim();\n  }\n  text = text.replace(/^```(?:markdown|md)?\\s*$/gim, '');\n  text = text.replace(/^```\\s*$/gim, '');\n  return text.trim();\n}\n\nfunction inlineFormat(text) {\n  let s = escapeHtml(text);\n  // Links\n  s = s.replace(\n    /\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)/g,\n    '<a href=\"$2\" target=\"_blank\" style=\"color:#0d6efd;text-decoration:none;\">$1</a>'\n  );\n  // Inline code\n  s = s.replace(\n    /`([^`]+)`/g,\n    '<code style=\"background:#eef2f7;padding:2px 6px;border-radius:6px;font-family:Consolas,monospace;font-size:13px;\">$1</code>'\n  );\n  // Bold\n  s = s.replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>');\n  // Italic\n  s = s.replace(/(^|[^*])\\*(?!\\s)([^*]+?)\\*(?!\\*)/g, '$1<em>$2</em>');\n  // Badges de color\n  s = s.replace(\n    /\\bROJO\\b/gi,\n    '<span style=\"display:inline-block;background:#dc3545;color:#fff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;\">ROJO</span>'\n  );\n  s = s.replace(\n    /\\bNARANJA\\b/gi,\n    '<span style=\"display:inline-block;background:#fd7e14;color:#fff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;\">NARANJA</span>'\n  );\n  s = s.replace(\n    /\\bVERDE\\b/gi,\n    '<span style=\"display:inline-block;background:#28a745;color:#fff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;\">VERDE</span>'\n  );\n  s = s.replace(\n    /\\bGRIS\\b/gi,\n    '<span style=\"display:inline-block;background:#6c757d;color:#fff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;\">GRIS</span>'\n  );\n  return s;\n}\n\nfunction buildCallout(title, body, color = '#0d6efd') {\n  return `\n    <div style=\"\n      border-left:5px solid ${color};\n      background:#f8f9fa;\n      padding:14px 16px;\n      margin:12px 0 16px 0;\n      border-radius:10px;\n    \">\n      ${title ? `<div style=\"font-weight:800;color:#212529;margin-bottom:6px;\">${inlineFormat(title)}</div>` : ''}\n      <div style=\"color:#343a40;line-height:1.7;\">${inlineFormat(body)}</div>\n    </div>\n  `;\n}\n\nfunction buildList(items, ordered = false) {\n  const tag = ordered ? 'ol' : 'ul';\n  return `\n    <${tag} style=\"margin:8px 0 16px 22px;line-height:1.75;color:#343a40;\">\n      ${items.map(item => `<li style=\"margin-bottom:6px;\">${inlineFormat(item)}</li>`).join('')}\n    </${tag}>\n  `;\n}\n\nfunction renderHeading(level, text) {\n  const styles = {\n    1: 'font-size:26px;color:#0d6efd;margin:18px 0 12px;font-weight:800;',\n    2: 'font-size:21px;color:#0d6efd;margin:18px 0 10px;font-weight:800;',\n    3: 'font-size:18px;color:#343a40;margin:16px 0 8px;font-weight:800;',\n    4: 'font-size:16px;color:#495057;margin:14px 0 8px;font-weight:700;'\n  };\n  return `<h${level} style=\"${styles[level] || styles[4]}\">${inlineFormat(text)}</h${level}>`;\n}\n\nfunction isTableLine(line) {\n  return line.includes('|') && !/^```/.test(line);\n}\n\nfunction buildTable(rows) {\n  if (!rows.length) return '';\n  const headers = rows[0].map(c => c.trim());\n  const bodyRows = rows.slice(1);\n  return `\n    <table style=\"width:100%;border-collapse:collapse;margin:14px 0 18px 0;font-size:14px;\">\n      <thead><tr>${headers.map(h => `<th style=\"text-align:left;padding:10px 12px;border-bottom:2px solid #dee2e6;background:#f8f9fa;\">${inlineFormat(h)}</th>`).join('')}</tr></thead>\n      <tbody>${bodyRows.map(row => `<tr>${row.map(cell => `<td style=\"padding:10px 12px;border-bottom:1px solid #e9ecef;vertical-align:top;\">${inlineFormat(cell.trim())}</td>`).join('')}</tr>`).join('')}</tbody>\n    </table>\n  `;\n}\n\nfunction splitLongBulletIntoItems(bulletText) {\n  // Busca múltiples menciones de máquina en un solo párrafo y las separa en callouts individuales\n  const pattern = /(?:^|[-•])\\s*(?:máquina\\s*:?\\s*)?([^,:]+?)\\s*,\\s*(?:responsable\\s*:?\\s*([^,:]+?))\\s*(?:[,.]|$)\\s*(.*)/gi;\n  const items = [];\n  let match;\n  while ((match = pattern.exec(bulletText)) !== null) {\n    const maquina = match[1]?.trim();\n    const responsable = match[2]?.trim();\n    const resto = match[3]?.trim();\n    if (maquina && responsable) {\n      items.push({\n        title: `Máquina: ${maquina} | Responsable: ${responsable}`,\n        body: resto || ''\n      });\n    }\n  }\n  if (items.length === 0) {\n    // Si no encontró el patrón, dejamos la línea como estaba\n    return [bulletText];\n  }\n  return items;\n}\n\nfunction parseMarkdown(md) {\n  const lines = cleanMarkdown(md).split('\\n');\n  let html = '';\n  let paragraph = [];\n  let bulletItems = [];\n  let orderedItems = [];\n  let blockquote = [];\n  let tableLines = [];\n\n  const flushParagraph = () => {\n    if (!paragraph.length) return;\n    const text = paragraph.join(' ').trim();\n    if (text) {\n      html += `<p style=\"margin:0 0 12px 0;line-height:1.75;color:#343a40;\">${inlineFormat(text)}</p>`;\n    }\n    paragraph = [];\n  };\n\n  const flushBullets = () => {\n    if (!bulletItems.length) return;\n    for (const item of bulletItems) {\n      // Intentar dividir bullets largos en callouts\n      if (item.length > 120 && (item.toLowerCase().includes('máquina') || item.toLowerCase().includes('responsable'))) {\n        const parts = splitLongBulletIntoItems(item);\n        if (typeof parts[0] === 'string') {\n          // No se pudo dividir, se trata como bullet normal\n          html += buildList([item]);\n        } else {\n          parts.forEach(p => {\n            html += buildCallout(p.title, p.body, '#0d6efd');\n          });\n        }\n      } else {\n        html += buildList([item]);\n      }\n    }\n    bulletItems = [];\n  };\n\n  const flushOrdered = () => {\n    if (!orderedItems.length) return;\n    html += buildList(orderedItems, true);\n    orderedItems = [];\n  };\n\n  const flushBlockquote = () => {\n    if (!blockquote.length) return;\n    html += `\n      <div style=\"border-left:4px solid #0d6efd;background:#f8f9fa;padding:12px 16px;margin:12px 0 16px 0;border-radius:8px;color:#495057;\">\n        ${blockquote.map(line => `<div style=\"margin:4px 0;\">${inlineFormat(line)}</div>`).join('')}\n      </div>\n    `;\n    blockquote = [];\n  };\n\n  const flushTable = () => {\n    if (tableLines.length < 2) {\n      tableLines = [];\n      return;\n    }\n    let rows = tableLines\n      .map(line => line.trim().replace(/^\\|/, '').replace(/\\|$/, '').split('|'))\n      .map(cells => cells.map(c => c.trim()));\n\n    if (rows.length >= 2 && /^\\|?(\\s*:?-{3,}:?\\s*\\|)+\\s*$/.test(tableLines[1].trim())) {\n      rows.splice(1, 1);\n    }\n    html += buildTable(rows);\n    tableLines = [];\n  };\n\n  const flushAll = () => {\n    flushParagraph();\n    flushBullets();\n    flushOrdered();\n    flushBlockquote();\n    flushTable();\n  };\n\n  for (let i = 0; i < lines.length; i++) {\n    const rawLine = lines[i];\n    const line = rawLine.trim();\n\n    if (!line) {\n      flushAll();\n      continue;\n    }\n\n    if (/^---+$/.test(line)) {\n      flushAll();\n      html += '<hr style=\"border:none;border-top:1px solid #dee2e6;margin:18px 0;\">';\n      continue;\n    }\n\n    const heading = line.match(/^(#{1,4})\\s+(.*)$/);\n    if (heading) {\n      flushAll();\n      const level = heading[1].length;\n      html += renderHeading(level, heading[2].trim());\n      continue;\n    }\n\n    // Callout ya formateado\n    const kvBullet = line.match(/^[-*•]\\s+\\*\\*(.+?)\\*\\*:\\s*(.+)$/);\n    if (kvBullet) {\n      flushAll();\n      html += buildCallout(kvBullet[1], kvBullet[2], '#0d6efd');\n      continue;\n    }\n\n    const simpleBulletKv = line.match(/^[-*•]\\s+([^:]+):\\s*(.+)$/);\n    if (simpleBulletKv && simpleBulletKv[1].length < 50) {\n      flushAll();\n      html += buildCallout(simpleBulletKv[1], simpleBulletKv[2], '#6c757d');\n      continue;\n    }\n\n    // Tablas\n    if (isTableLine(line)) {\n      flushParagraph();\n      flushBullets();\n      flushOrdered();\n      flushBlockquote();\n      tableLines.push(rawLine);\n      const next = lines[i + 1] ? lines[i + 1].trim() : '';\n      if (!isTableLine(next) || !next) {\n        flushTable();\n      }\n      continue;\n    }\n\n    // Citas\n    if (/^>\\s?/.test(line)) {\n      flushParagraph();\n      flushBullets();\n      flushOrdered();\n      blockquote.push(line.replace(/^>\\s?/, ''));\n      const next = lines[i + 1] ? lines[i + 1].trim() : '';\n      if (!/^>\\s?/.test(next)) {\n        flushBlockquote();\n      }\n      continue;\n    }\n\n    // Viñetas\n    const bullet = line.match(/^[-*•]\\s+(.*)$/);\n    if (bullet) {\n      flushParagraph();\n      flushOrdered();\n      flushBlockquote();\n      bulletItems.push(bullet[1].trim());\n      const next = lines[i + 1] ? lines[i + 1].trim() : '';\n      if (!/^[-*•]\\s+/.test(next)) {\n        flushBullets();\n      }\n      continue;\n    }\n\n    // Numeradas\n    const ordered = line.match(/^\\d+\\.\\s+(.*)$/);\n    if (ordered) {\n      flushParagraph();\n      flushBullets();\n      flushBlockquote();\n      orderedItems.push(ordered[1].trim());\n      const next = lines[i + 1] ? lines[i + 1].trim() : '';\n      if (!/^\\d+\\.\\s+/.test(next)) {\n        flushOrdered();\n      }\n      continue;\n    }\n\n    // Párrafo normal\n    flushBullets();\n    flushOrdered();\n    flushBlockquote();\n    paragraph.push(line);\n  }\n\n  flushAll();\n  return html;\n}\n\nconst bodyHtml = parseMarkdown(raw);\n\nconst correo = `\n<div style=\"\n  font-family:Arial,sans-serif;\n  background:#f4f6f9;\n  padding:28px;\n\">\n  <div style=\"\n    max-width:920px;\n    margin:auto;\n    background:#ffffff;\n    border:1px solid #dee2e6;\n    border-radius:14px;\n    overflow:hidden;\n    box-shadow:0 4px 18px rgba(0,0,0,.06);\n  \">\n    <div style=\"\n      background:linear-gradient(135deg,#0d6efd,#084298);\n      color:#fff;\n      padding:30px 32px;\n      text-align:center;\n    \">\n      <div style=\"font-size:30px;font-weight:800;line-height:1.2;\">\n        🔧 Resumen Ejecutivo de Mantenimiento\n      </div>\n      <div style=\"margin-top:10px;font-size:14px;opacity:.92;\">\n        Informe automático para jefatura y supervisión\n      </div>\n    </div>\n\n    <div style=\"\n      padding:34px 36px;\n      color:#343a40;\n      font-size:15px;\n      line-height:1.75;\n    \">\n      ${bodyHtml}\n    </div>\n\n    <div style=\"\n      background:#f8f9fa;\n      border-top:1px solid #dee2e6;\n      padding:18px 24px;\n      text-align:center;\n      color:#6c757d;\n      font-size:12px;\n    \">\n      Este informe fue generado automáticamente por el sistema de mantenimiento.<br>\n      Beiplas · No responder a este correo\n    </div>\n  </div>\n</div>\n`;\n\nreturn [\n  {\n    json: {\n      html: correo,\n      markdown: raw\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        64
+      ],
+      "id": "a60c5eb4-0ee0-46f8-aa48-2a71276685c8",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.output || $input.first().json.text || '';\nconst maxTelegram = 4096;\n\n// Limpiar Markdown residual\nconst limpio = raw\n  .replace(/^#{1,6}\\s/gm, '')       // quitar encabezados (#)\n  .replace(/\\*\\*(.*?)\\*\\*/g, '$1')  // quitar negritas\n  .replace(/\\*(.*?)\\*/g, '$1')      // quitar cursivas\n  .replace(/`{1,3}/g, '')           // quitar backticks\n  .replace(/\\n{3,}/g, '\\n\\n')       // normalizar saltos de línea múltiples\n  .replace(/^\\s*[-•]\\s/gm, '- ')    // unificar viñetas\n  .trim();\n\n// Truncar si excede el límite de Telegram\nconst final = limpio.length > maxTelegram\n  ? limpio.substring(0, maxTelegram - 3) + '...'\n  : limpio;\n\nreturn [{ json: { mensaje: final } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        -144
+      ],
+      "id": "d2d6845b-19ef-40f0-9aec-84ac7e9bad75",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.mensaje }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        -144
+      ],
+      "id": "442ce830-5e92-4b78-b3b7-d454a9a75d99",
+      "name": "Send a text message",
+      "webhookId": "5d948c31-ed66-4e93-8996-bd8a63f4047b",
+      "credentials": {
+        "telegramApi": {
+          "id": "PBjL8AcZDKhasbZY",
+          "name": "Telegram Bot Mantenimiento"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        592,
+        208
+      ],
+      "id": "740b5072-2d09-4c92-83dc-3d7d3b1cdaa3",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "hubxUNt0M95zQ33L",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        []
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "America/Bogota",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "d243234d-3a99-4822-a49c-7bef6020e3fe",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "NvN2IgZAmSesu6f6",
+  "tags": []
+}

@@ -1,0 +1,367 @@
+{
+  "name": "Informe de Simulador",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "5b51afaa-0545-493a-ba7c-c118d3b233cb",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres un extractor de datos, no un calculador. Tu única tarea es reemplazar los corchetes [ ] con el valor exacto que aparece en el campo indicado del JSON. No debes sumar, restar, multiplicar ni cambiar ningún número. Si un valor es 0, escribe 0. Si una lista está vacía, escribe \"Ninguna\". Si hay números decimales, cópialos tal cual.\n\nJSON:\n{{ JSON.stringify($json) }}\n\nAhora completa la siguiente plantilla respetando escrupulosamente las instrucciones entre corchetes:\n\nSalud general: [copia textual salud_general.nivel] - [copia textual salud_general.mensaje]. Cumplimiento promedio global: [copia resumen_planta.cumplimiento_promedio]%.\n\nÁrea Sellado: [copia por_area[0].maquinas_activas] máquinas activas. Producción esperada hoy (kg reales): [copia por_area[0].kg_reales_producir_hoy] kg. Contexto adicional: kg programados [copia por_area[0].kg_programados], kg atrasados [copia por_area[0].kg_atrasados], kg adelantados [copia por_area[0].kg_adelantados]. Cumplimiento: [copia por_area[0].cumplimiento_promedio]%. Máquinas críticas: [si por_area[0].maquinas_criticas NO está vacío, copia el nombre y kg_fuera_capacidad de cada una separadas por coma; si está vacío escribe \"Ninguna\"].\n\nÁrea Extrusión: [copia por_area[1].maquinas_activas] máquinas activas. Producción esperada hoy (kg reales): [copia por_area[1].kg_reales_producir_hoy] kg. Contexto: programados [copia por_area[1].kg_programados], atrasados [copia por_area[1].kg_atrasados], adelantados [copia por_area[1].kg_adelantados]. Cumplimiento: [copia por_area[1].cumplimiento_promedio]%. Máquinas críticas: [según plantilla anterior].\n\nÁrea Impresión: [copia por_area[2].maquinas_activas] máquinas activas. Producción esperada: [copia por_area[2].kg_reales_producir_hoy] kg. Contexto: programados [copia por_area[2].kg_programados], atrasados [copia por_area[2].kg_atrasados], adelantados [copia por_area[2].kg_adelantados]. Cumplimiento: [copia por_area[2].cumplimiento_promedio]%. Máquinas críticas: [según plantilla].\n\nRecomendaciones: [copia textualmente cada elemento del array alertas separado por punto y coma]. Se sugiere redistribuir carga.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1168,
+        -16
+      ],
+      "id": "5c87139a-4245-4601-8c73-290754a8c45a",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========== Utilidades ==========\nfunction redondear(num) {\n  if (num === null || num === undefined || isNaN(num)) return 0;\n  return Math.round(num * 100) / 100;\n}\n\nfunction getTipoReporte() {\n  const hora = new Date().getHours();\n  if (hora >= 5 && hora <= 10) return \"Reporte de inicio de operaciones (mañana)\";\n  if (hora >= 19 || hora <= 3) return \"Reporte de cierre de turno (noche)\";\n  return \"Reporte de seguimiento de producción\";\n}\n\nfunction parseNumerico(valor) {\n  return Number(valor) || 0;\n}\n\nfunction parsePorcentaje(valor) {\n  // Los porcentajes vienen como decimal (0.3865 = 38.65%)\n  const num = parseNumerico(String(valor).replace('%', ''));\n  return num * 100;   // Convertir a porcentaje real\n}\n\nfunction contarReferencias(refStr) {\n  if (!refStr) return 0;\n  const lineas = refStr.split('\\n').map(x => x.trim()).filter(x => x && x.toLowerCase() !== 'sin datos');\n  return lineas.length;\n}\n\n// ========== Mapeo de sinónimos de columnas ==========\nconst sinonimos = {\n  maquina:           [\"maquina\"],\n  programaciones:    [\"programaciones relacionadas\"],\n  referencias:       [\"referencias a producir\"],\n  kgProgramados:     [\"kilogramos programado\", \"kilogramos programados\", \"kg programados\", \"kg programado\"],\n  kgAtrasados:       [\"kilogramos atrasos\", \"kg atrasados\", \"atrasos\"],\n  kgAdelantados:     [\"kilogramos adelantados futuro\", \"kg adelantados futuro\"],\n  kgAdelantadosHoy:  [\"kilogramos adelanto hoy\", \"kg adelanto hoy\", \"adelanto hoy\"],\n  kgHechos:          [\"kilos ya hechos\", \"kg hechos\"],\n  kgTotal:           [\"total kilogramos a producir\", \"total kg a producir\", \"total kilogramos\", \"kg totales a producir\"],\n  horasTotales:      [\"tiempo total\", \"horas totales\", \"horas estimadas\"],\n  cumplimiento:      [\"% cumplimiento\", \"cumplimiento\", \"%cumplimiento\", \"cumplimiento (%)\"],\n  fueraCapacidad:    [\"fuera de capacidad de produccion del turno\", \"fuera de capacidad\", \"exceso de capacidad\", \"sobrecarga (kg)\", \"kg fuera capacidad\"]\n};\n\nfunction limpiarTexto(texto) {\n  return texto.replace(/[\\s\\n]+/g, ' ').trim().toLowerCase();\n}\n\nfunction getValor(row, campoLogico) {\n  const opciones = sinonimos[campoLogico];\n  if (!opciones) return undefined;\n  for (const key of Object.keys(row)) {\n    const limpia = limpiarTexto(key);\n    if (opciones.some(op => limpiarTexto(op) === limpia)) {\n      return row[key];\n    }\n  }\n  return undefined;\n}\n\nfunction extraerAreaDesdeMaquina(maquina) {\n  const nombre = maquina.toLowerCase();\n  if (nombre.includes('selladora')) return 'Sellado';\n  if (nombre.includes('extrusora')) return 'Extrusión';\n  if (nombre.includes('impresora')) return 'Impresión';\n  return 'Sin área';\n}\n\nfunction calcularSalud(maquinasSobrecargadas, cumplimientoPromedio) {\n  if (maquinasSobrecargadas > 5 || cumplimientoPromedio < 50) {\n    return {\n      nivel: \"Crítico\",\n      mensaje: `Varias máquinas exceden su capacidad. Cumplimiento promedio del ${cumplimientoPromedio}%. Se requiere intervención inmediata.`\n    };\n  }\n  if (maquinasSobrecargadas > 2 || cumplimientoPromedio < 70) {\n    return {\n      nivel: \"Regular\",\n      mensaje: `${maquinasSobrecargadas} máquinas sobrecargadas. Cumplimiento promedio del ${cumplimientoPromedio}%.`\n    };\n  }\n  return {\n    nivel: \"Bueno\",\n    mensaje: \"Operación dentro de lo esperado.\"\n  };\n}\n\n// ========== Variables principales ==========\nconst ahora = new Date();\nconst tipoReporte = getTipoReporte();\n\nconst areas = {};\nconst resumenPlanta = {\n  maquinas_activas: 0,\n  total_programaciones: 0,\n  total_referencias: 0,\n  kg_programados: 0,\n  kg_atrasados: 0,\n  kg_adelantados: 0,\n  kg_totales_producir: 0,\n  horas_totales_estimadas: 0,\n  cumplimiento_sum: 0,\n  cumplimiento_count: 0,\n  maquinas_sobrecargadas: 0,\n  kg_fuera_capacidad: 0\n};\nconst alertas = [];\n\nfunction inicializarArea(nombre) {\n  return {\n    area: nombre,\n    maquinas_activas: 0,\n    programaciones: 0,\n    referencias: 0,\n    kg_programados: 0,\n    kg_atrasados: 0,\n    kg_adelantados: 0,\n    kg_totales: 0,\n    horas_totales: 0,\n    cumplimiento_sum: 0,\n    cumplimiento_count: 0,\n    maquinas_criticas: [],\n    turnos: {\n      A: { capacidad: 0, kilos: 0 },\n      B: { capacidad: 0, kilos: 0 },\n      C: { capacidad: 0, kilos: 0 }\n    }\n  };\n}\n\nfunction procesarFila(row) {\n  const maquina = getValor(row, 'maquina');\n  if (!maquina || maquina.toLowerCase().includes('total')) return;\n\n  const areaNombre = extraerAreaDesdeMaquina(maquina);\n  if (!areas[areaNombre]) {\n    areas[areaNombre] = inicializarArea(areaNombre);\n  }\n\n  const programaciones = parseNumerico(getValor(row, 'programaciones'));\n  const referencias = contarReferencias(getValor(row, 'referencias'));\n  const kgProgramados = parseNumerico(getValor(row, 'kgProgramados'));\n  const kgAtrasados = parseNumerico(getValor(row, 'kgAtrasados'));\n  const kgAdelantados = parseNumerico(getValor(row, 'kgAdelantados'));\n  const kgAdelantadosHoy = parseNumerico(getValor(row, 'kgAdelantadosHoy'));\n  const kgTotal = parseNumerico(getValor(row, 'kgTotal'));\n  const horasTotales = parseNumerico(getValor(row, 'horasTotales'));\n  let cumplimiento = parsePorcentaje(getValor(row, 'cumplimiento'));  // ya en %\n  let fueraCapacidad = parseNumerico(getValor(row, 'fueraCapacidad'));\n\n  // Limpiar residuos flotantes muy pequeños\n  if (fueraCapacidad < 0.01) fueraCapacidad = 0;\n\n  // ----- Extraer turnos según el área -----\n  const esExtrusion = maquina.toLowerCase().includes('extrusora');\n  let turnoA_cap = 0, turnoA_kilos = 0;\n  let turnoB_cap = 0, turnoB_kilos = 0;\n  let turnoC_cap = 0, turnoC_kilos = 0;\n\n  if (esExtrusion) {\n    turnoA_cap = parseNumerico(row[\"Turno D\"]);\n    turnoA_kilos = parseNumerico(row[\"Kilos hechos Turno D\"]);\n    turnoB_cap = parseNumerico(row[\"Turno E\"]);\n    turnoB_kilos = parseNumerico(row[\"Kilos hechos Turno E\"]);\n  } else {\n    turnoA_cap = parseNumerico(row[\"Turno A\"]);\n    turnoA_kilos = parseNumerico(row[\"Kilos hechos Turno A\"]);\n    turnoB_cap = parseNumerico(row[\"Turno B\"]);\n    turnoB_kilos = parseNumerico(row[\"Kilos hechos Turno B\"]);\n    turnoC_cap = parseNumerico(row[\"Turno C\"]);\n    turnoC_kilos = parseNumerico(row[\"Kilos hechos Turno C\"]);\n  }\n\n  // Acumular en el área\n  const area = areas[areaNombre];\n  area.turnos.A.capacidad += turnoA_cap;\n  area.turnos.A.kilos += turnoA_kilos;\n  area.turnos.B.capacidad += turnoB_cap;\n  area.turnos.B.kilos += turnoB_kilos;\n  area.turnos.C.capacidad += turnoC_cap;\n  area.turnos.C.kilos += turnoC_kilos;\n\n  // --- Métricas globales ---\n  const totalKilosArea = kgTotal + kgProgramados + kgAtrasados + kgAdelantados + kgAdelantadosHoy;\n  if (totalKilosArea > 0) {\n    resumenPlanta.maquinas_activas++;\n    area.maquinas_activas++;\n  }\n\n  resumenPlanta.total_programaciones += programaciones;\n  resumenPlanta.total_referencias += referencias;\n  resumenPlanta.kg_programados += kgProgramados;\n  resumenPlanta.kg_atrasados += kgAtrasados;\n  resumenPlanta.kg_adelantados += kgAdelantados + kgAdelantadosHoy;   // Incluir adelanto hoy\n  resumenPlanta.kg_totales_producir += kgTotal;\n  resumenPlanta.horas_totales_estimadas += horasTotales;\n\n  if (!isNaN(cumplimiento) && cumplimiento > 0) {\n    resumenPlanta.cumplimiento_sum += cumplimiento;\n    resumenPlanta.cumplimiento_count++;\n  }\n\n  if (fueraCapacidad > 0) {\n    resumenPlanta.maquinas_sobrecargadas++;\n    resumenPlanta.kg_fuera_capacidad += fueraCapacidad;\n    alertas.push(`${maquina} excede capacidad (${redondear(fueraCapacidad)} kg)`);\n    area.maquinas_criticas.push({\n      maquina: maquina,\n      kg_fuera_capacidad: redondear(fueraCapacidad)\n    });\n  }\n\n  area.programaciones += programaciones;\n  area.referencias += referencias;\n  area.kg_programados += kgProgramados;\n  area.kg_atrasados += kgAtrasados;\n  area.kg_adelantados += kgAdelantados + kgAdelantadosHoy;\n  area.kg_totales += kgTotal;\n  area.horas_totales += horasTotales;\n  if (!isNaN(cumplimiento) && cumplimiento > 0) {\n    area.cumplimiento_sum += cumplimiento;\n    area.cumplimiento_count++;\n  }\n}\n\nfor (const item of $input.all()) {\n  procesarFila(item.json);\n}\n\n// ========== Cálculos finales ==========\nconst cumplimientoPromedio = resumenPlanta.cumplimiento_count\n  ? Math.round(resumenPlanta.cumplimiento_sum / resumenPlanta.cumplimiento_count)\n  : 0;\n\nconst salud = calcularSalud(resumenPlanta.maquinas_sobrecargadas, cumplimientoPromedio);\n\nconst areasFinal = Object.values(areas).map(a => ({\n  area: a.area,\n  maquinas_activas: a.maquinas_activas,\n  programaciones: a.programaciones,\n  referencias: a.referencias,\n  kg_programados: redondear(a.kg_programados),\n  kg_atrasados: redondear(a.kg_atrasados),\n  kg_adelantados: redondear(a.kg_adelantados),\n  kg_reales_producir_hoy: redondear(a.kg_totales),\n  horas_totales: redondear(a.horas_totales),\n  cumplimiento_promedio: a.cumplimiento_count\n    ? Math.round(a.cumplimiento_sum / a.cumplimiento_count)\n    : 0,\n  maquinas_criticas: a.maquinas_criticas,\n  turnos: {\n    A: {\n      capacidad: redondear(a.turnos.A.capacidad),\n      kilos_hechos: redondear(a.turnos.A.kilos)\n    },\n    B: {\n      capacidad: redondear(a.turnos.B.capacidad),\n      kilos_hechos: redondear(a.turnos.B.kilos)\n    },\n    C: {\n      capacidad: redondear(a.turnos.C.capacidad),\n      kilos_hechos: redondear(a.turnos.C.kilos)\n    }\n  }\n}));\n\n// ========== Salida final ==========\nreturn [{\n  json: {\n    tipo_reporte: tipoReporte,\n    fecha: ahora.toISOString().split('T')[0],\n    hora_generacion: ahora.toLocaleTimeString(),\n    salud_general: salud,\n    resumen_planta: {\n      maquinas_activas: resumenPlanta.maquinas_activas,\n      total_programaciones: resumenPlanta.total_programaciones,\n      total_referencias: resumenPlanta.total_referencias,\n      kg_programados: redondear(resumenPlanta.kg_programados),\n      kg_atrasados: redondear(resumenPlanta.kg_atrasados),\n      kg_adelantados: redondear(resumenPlanta.kg_adelantados),\n      kg_reales_producir_hoy: redondear(resumenPlanta.kg_totales_producir),\n      horas_totales_estimadas: redondear(resumenPlanta.horas_totales_estimadas),\n      cumplimiento_promedio: cumplimientoPromedio,\n      maquinas_sobrecargadas: resumenPlanta.maquinas_sobrecargadas,\n      kg_fuera_capacidad: redondear(resumenPlanta.kg_fuera_capacidad)\n    },\n    por_area: areasFinal,\n    alertas\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -16
+      ],
+      "id": "a66c9827-8ddf-4b24-b74d-34dd199d1ba3",
+      "name": "Preparar datos para IA"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "Uqu4yuYNpty1gDc1",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/Uqu4yuYNpty1gDc1",
+          "cachedResultName": "Limpiar e Insertar Informe Simulador"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        -352
+      ],
+      "id": "eb94bd87-3459-467b-85e8-3ca3ee11bf31",
+      "name": "Limpiar e Insertar Informe Simulador",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 23,
+              "triggerAtMinute": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -16,
+        0
+      ],
+      "id": "1ac5419a-bc05-4f43-8871-825ba474b1e1",
+      "name": "Disparador de Noche"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    \"hoja\" : \"Programador Planta Sellado\"\n  },\n  {\n    \"hoja\" : \"Programador Planta Extrusion\"\n  },\n  {\n    \"hoja\" : \"Programador Planta Impresión\"\n  }\n]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "aae114ca-b9b9-471c-8354-31ea32019046",
+      "name": "Hojas"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_SIMULADOR",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.hoja }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        704,
+        16
+      ],
+      "id": "eae6dc2f-1301-4704-a216-6be7ffd863dd",
+      "name": "Obtener Datos Simulador",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obtener el resumen de la IA (primer ítem)\nconst resumenIA = $input.first().json.output || $input.first().json.text || 'No se generó resumen ejecutivo.';\n\n// Obtener metadatos del nodo que preparó los datos\nconst datosPreparados = $('Preparar datos para IA').first().json;\nconst tipoReporte = datosPreparados.tipo_reporte || 'Reporte de Producción';\nconst fecha = datosPreparados.fecha || new Date().toISOString().split('T')[0];\nconst hora = datosPreparados.hora_generacion || new Date().toLocaleTimeString();\n\n// Normalizar saltos de línea: convertir \\r\\n a \\n, luego dividir por doble salto (párrafos reales)\nconst textoLimpio = resumenIA.replace(/\\r\\n/g, '\\n').trim();\nconst parrafos = textoLimpio\n  .split(/\\n\\n+/)          // uno o más saltos de línea separan párrafos\n  .filter(p => p.trim() !== '')\n  .map(p => `<p style=\"margin:0 0 10px 0; line-height:1.6; font-size:14px; color:#333;\">${p.replace(/\\n/g, '<br>')}</p>`)\n  .join('');\n\n// Construir el HTML completo del correo\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>${tipoReporte}</title>\n</head>\n<body style=\"margin:0; padding:0; background-color: #f4f7fa; font-family: Arial, Helvetica, sans-serif;\">\n  \n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color: #f4f7fa; padding: 20px 0;\">\n    <tr>\n      <td align=\"center\">\n        <table width=\"650\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);\">\n          \n          <!-- Encabezado -->\n          <tr>\n            <td style=\"background: linear-gradient(135deg, #003366, #0056b3); padding: 30px; text-align: center;\">\n              <h1 style=\"color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 0.5px;\">${tipoReporte}</h1>\n              <p style=\"color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 14px;\">\n                ${fecha} – ${hora}\n              </p>\n            </td>\n          </tr>\n          \n          <!-- Resumen Ejecutivo -->\n          <tr>\n            <td style=\"padding: 30px;\">\n              <h2 style=\"color: #003366; margin: 0 0 15px 0; font-size: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;\">📋 Resumen Ejecutivo</h2>\n              <div style=\"background-color: #e8f4f8; border-left: 5px solid #0056b3; padding: 15px 20px; border-radius: 4px;\">\n                ${parrafos}\n              </div>\n              <p style=\"margin-top: 20px; font-size: 13px; color: #777;\">\n                Consulte el archivo adjunto para el detalle completo de la planificación de producción.\n              </p>\n            </td>\n          </tr>\n          \n          <!-- Pie de página -->\n          <tr>\n            <td style=\"background-color: #f0f2f5; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;\">\n              <p style=\"font-size: 12px; color: #888; margin: 0;\">\n                🔧 Sistema Automatizado de Gestión de Producción<br>\n                <span style=\"font-size: 11px;\">Este correo fue generado automáticamente. Por favor no responda a este mensaje.</span>\n              </p>\n            </td>\n          </tr>\n          \n        </table>\n      </td>\n    </tr>\n  </table>\n\n</body>\n</html>\n`;\n\nreturn [{ json: { html } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        -16
+      ],
+      "id": "edf24884-f6aa-4dd3-90c7-5c9ef0d32275",
+      "name": "Construcción de HTML"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_DRIVE_FILE_ID_SIMULADOR",
+          "mode": "list",
+          "cachedResultName": "Entrega De Reporte Simulador",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_DRIVE_FILE_ID_SIMULADOR/edit?usp=drivesdk"
+        },
+        "options": {
+          "binaryPropertyName": "Simulador",
+          "googleFileConversion": {
+            "conversion": {
+              "sheetsToFormat": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+          },
+          "fileName": "=Instancia de simulador {{ $('Preparar datos para IA').item.json.fecha }} / {{ $('Preparar datos para IA').item.json.hora_generacion }}.xlsx"
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1728,
+        -16
+      ],
+      "id": "f730f2b1-2823-4e84-aa40-2bcdd2277cf3",
+      "name": "Descargar Archivo",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cICUyPueeWaLrbXQ",
+          "name": "Drive Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "example@example.com, example@example.com, example@example.com",
+        "subject": "={{ $('Preparar datos para IA').first().json.tipo_reporte }} - {{ $('Preparar datos para IA').first().json.fecha }}",
+        "message": "={{ $('Construcción de HTML').item.json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "Simulador"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1936,
+        -16
+      ],
+      "id": "5b82f152-eb1c-4c8a-8d18-9b44b3dd4aef",
+      "name": "Enviar Por Gmail",
+      "webhookId": "2cc23bc8-0707-4977-a20b-1816d3444a1f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FyvdslAAKaZREOgA",
+          "name": "Envíos Sistemas Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1168,
+        176
+      ],
+      "id": "4561df6a-0dfa-4647-af82-0710499b18f7",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "hubxUNt0M95zQ33L",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Limpiar e Insertar Informe Simulador",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar datos para IA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obtener Datos Simulador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Construcción de HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar datos para IA": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparador de Noche": {
+      "main": [
+        [
+          {
+            "node": "Hojas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hojas": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener Datos Simulador": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construcción de HTML": {
+      "main": [
+        [
+          {
+            "node": "Descargar Archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar Archivo": {
+      "main": [
+        [
+          {
+            "node": "Enviar Por Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "America/Bogota",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "962713ea-4a5f-42e4-82a6-42a34970ac28",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "WXKk600CkATqkZU1",
+  "tags": []
+}

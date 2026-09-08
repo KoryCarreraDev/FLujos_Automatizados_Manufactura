@@ -1,0 +1,500 @@
+{
+  "name": "Sincronizar tiempos de máquina (kilos reales)",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "$getWorkflowStaticData('global').tiemposMaquinaProcesadas = [];\nreturn [{ json: { limpio: true } }];"
+      },
+      "id": "857d48d4-47c3-4896-a459-c2dd4aa50d6a",
+      "name": "Limpiar lista de IDs procesados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -768,
+        256
+      ],
+      "id": "2329ecc6-b1f7-431b-aee9-22ceced46239",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT codigo_legacy, id_maquina FROM public.maquinas WHERE codigo_legacy IS NOT NULL;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -400,
+        256
+      ],
+      "id": "85451d03-f954-4eb6-a288-2f3170bdbf55",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\nconst mapMaquinas = {};\nfor (const item of rows) {\n  const r = item.json;\n  if (r.codigo_legacy) mapMaquinas[r.codigo_legacy] = r.id_maquina;\n}\n$getWorkflowStaticData('global').mapeoMaquinas = mapMaquinas;\nreturn [{ json: { mapeos_cargados: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        256
+      ],
+      "id": "59cf3e1d-1e4f-4fa7-9524-a6fa15cdd2dc",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_TIEMPOS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 113894072,
+          "mode": "list",
+          "cachedResultName": "tiemposMaquina",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_TIEMPOS/edit#gid=113894072"
+        },
+        "options": {}
+      },
+      "id": "e6952d1e-767c-4c64-a7a2-f2a32dc7365d",
+      "name": "Leer tiempos de máquina",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        0,
+        256
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "22225ea2-1064-415e-986b-836d2fb78a80",
+              "leftValue": "={{ $json.Creado_TiempoMaquina }}",
+              "rightValue": "/2026",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        192,
+        256
+      ],
+      "id": "fe931e6e-e460-401c-8950-3873319dcb71",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "batchSize": 100,
+        "options": {}
+      },
+      "id": "b6b1f205-3345-4b2f-a316-ab740369da81",
+      "name": "Lotes de 50 filas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        704,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5ffa8113-d2d5-4461-8898-47831b6bf8b0",
+              "leftValue": "={{ $json.ID_TiempoMaquina }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "9bcd94b2-bb51-4d3e-836d-7eae96ee47c3",
+              "leftValue": "={{ $json.IDProgramacion_TiempoMaquina }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        272
+      ],
+      "id": "7bf42af7-a20b-442c-b8be-2dc7933af8e9",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nif (!staticData.tiemposMaquinaProcesadas) staticData.tiemposMaquinaProcesadas = [];\nconst ids = $input.all().map(item => String(item.json.ID_TiempoMaquina || '').trim()).filter(id => id);\nstaticData.tiemposMaquinaProcesadas.push(...ids);\nreturn $input.all();"
+      },
+      "id": "8cd7a760-64c7-497e-a78e-9f834f1f3f01",
+      "name": "Acumular IDs de tiempos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const loteItems = $input.all().map(item => item.json);\nconst mapMaquinas = $getWorkflowStaticData('global').mapeoMaquinas || {};\n\nconst escape = (v) => String(v).replace(/'/g, \"''\");\n\n// Limitar cualquier texto a un máximo de 255 caracteres (para no exceder VARCHAR(255))\nconst limitar = (val, max = 255) => {\n  if (val === undefined || val === null || val === '') return null;\n  return String(val).slice(0, max);\n};\n\n// Función para convertir fecha/hora (dd/mm/yyyy hh:mm:ss) a timestamp SQL\nconst formatTimestamp = (fechaStr) => {\n  if (!fechaStr) return 'NULL';\n  const partes = fechaStr.split(' ');\n  const fecha = partes[0];\n  const hora = partes[1] || '00:00:00';\n  const [d, m, a] = fecha.split('/');\n  if (!d || !m || !a) return 'NULL';\n  return `'${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')} ${hora}'`;\n};\n\n// Nueva función para convertir solo fecha (dd/mm/yyyy) a date SQL\nconst formatDate = (fechaStr) => {\n  if (!fechaStr) return 'NULL';\n  const limpia = fechaStr.replace(/-/g, '/');\n  const partes = limpia.split('/');\n  if (partes.length !== 3) return 'NULL';\n  const [d, m, a] = partes;\n  if (!d || !m || !a) return 'NULL';\n  return `'${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}'`;\n};\n\nconst parseNumber = (val) => {\n  if (val === undefined || val === null || val === '') return 'NULL';\n  const num = parseFloat(String(val).replace(',', '.'));\n  return isNaN(num) ? 'NULL' : num;\n};\n\nconst values = loteItems.map(item => {\n  const legacyId = item.ID_TiempoMaquina ? `'${escape(item.ID_TiempoMaquina)}'` : 'NULL';\n  const origenId = item.IDOrigen_TiempoMaquina ? `'${escape(item.IDOrigen_TiempoMaquina)}'` : 'NULL';\n  const progLegacyId = item.IDProgramacion_TiempoMaquina ? `'${escape(item.IDProgramacion_TiempoMaquina)}'` : 'NULL';\n  const idMaquina = mapMaquinas[item.Maquina_TiempoMaquina] ?? 'NULL';\n\n  // Aplicar limitar a los campos de texto que podrían superar 255\n  const tipo = limitar(item.Tipo_TiempoMaquina) ? `'${escape(limitar(item.Tipo_TiempoMaquina))}'` : 'NULL';\n  const proceso = limitar(item.Proceso_TiempoMaquina) ? `'${escape(limitar(item.Proceso_TiempoMaquina))}'` : 'NULL';\n  const rollo = limitar(item.Rollo_TiempoMaquina) ? `'${escape(limitar(item.Rollo_TiempoMaquina))}'` : 'NULL';\n  const contadorRollo = parseInt(item.ContadorRollo_TiempoMaquina) || 0;\n  const turno = limitar(item.Turno_TiempoMaquina) ? `'${escape(limitar(item.Turno_TiempoMaquina))}'` : 'NULL';\n\n  const inicio = formatTimestamp(item.Inicio_TiempoMaquina);\n  const fin = formatTimestamp(item.Fin_TiempoMaquina);\n\n  let duracion = parseFloat(item.Duracion_TiempoMaquina);\n  if (isNaN(duracion) || duracion < 0) duracion = 0;\n\n  const kilos = parseNumber(item.CantidadKilos_TiempoMaquina);\n  const productividad = parseNumber(item.Productividad_TiempoMaquina);\n  const retail = parseNumber(item.Retail_TiempoMaquina);\n\n  // Solución: truncar motivo_retail a 255 caracteres\n  const motivoRaw = limitar(item.MotivoRetail_TiempoMaquina, 255);\n  const motivoRetail = motivoRaw ? `'${escape(motivoRaw)}'` : 'NULL';\n\n  // NUEVO: fecha de producción\n  const fechaProduccion = item.FechaProduccion_TeimposMaquina\n    ? formatDate(item.FechaProduccion_TeimposMaquina)\n    : 'NULL';\n\n  return `(${legacyId}, ${origenId}, ${progLegacyId}, NULL, ${idMaquina}, ${tipo}, ${proceso}, ${rollo}, ${contadorRollo}, ${turno}, ${inicio}, ${fin}, ${duracion}, ${kilos}, ${productividad}, ${retail}, ${motivoRetail}, ${fechaProduccion})`;\n}).join(', ');\n\nif (!values) {\n  return [{ json: { sql: '', status: 'sin_datos' } }];\n}\n\nconst sql = `INSERT INTO public.tiempos_maquina \n  (legacy_id, legacy_origen_id, legacy_programacion_id, id_programacion, id_maquina, tipo, proceso, rollo, contador_rollo, turno, fecha_inicio, fecha_fin, duracion_horas, cantidad_kilos, productividad, retail_kilos, motivo_retail, fecha_produccion)\nVALUES ${values}\nON CONFLICT (legacy_id) DO UPDATE SET\n  legacy_origen_id = EXCLUDED.legacy_origen_id,\n  legacy_programacion_id = EXCLUDED.legacy_programacion_id,\n  id_maquina = EXCLUDED.id_maquina,\n  tipo = EXCLUDED.tipo,\n  proceso = EXCLUDED.proceso,\n  rollo = EXCLUDED.rollo,\n  contador_rollo = EXCLUDED.contador_rollo,\n  turno = EXCLUDED.turno,\n  fecha_inicio = EXCLUDED.fecha_inicio,\n  fecha_fin = EXCLUDED.fecha_fin,\n  duracion_horas = EXCLUDED.duracion_horas,\n  cantidad_kilos = EXCLUDED.cantidad_kilos,\n  productividad = EXCLUDED.productividad,\n  retail_kilos = EXCLUDED.retail_kilos,\n  motivo_retail = EXCLUDED.motivo_retail,\n  fecha_produccion = EXCLUDED.fecha_produccion;`;\n\nreturn [{ json: { sql } }];"
+      },
+      "id": "91dcb857-3a56-4569-8795-d7675bc28bc6",
+      "name": "Generar UPDATEs de kilos reales",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "id": "cda580cb-93a3-424e-9531-00a4e011d21f",
+      "name": "Ejecutar actualizaciones",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1536,
+        288
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const idsProcesados = $getWorkflowStaticData('global').tiemposMaquinaProcesadas || [];\nif (idsProcesados.length === 0) {\n  return [{ json: { sql: null } }];\n}\nconst lista = idsProcesados.map(id => `'${String(id).replace(/'/g, \"''\")}'`).join(', ');\nconst sql = `DELETE FROM public.tiempos_maquina WHERE legacy_id NOT IN (${lista})`;\nreturn [{ json: { sql } }];"
+      },
+      "id": "64007274-c0b1-4847-a799-74497df6a32b",
+      "name": "Generar delete masivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "id": "312443a3-947c-4dcb-b930-d626d2d56665",
+      "name": "Ejecutar Delete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1136,
+        128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT codigo_legacy, id_maquina FROM public.maquinas WHERE codigo_legacy IS NOT NULL;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1280,
+        512
+      ],
+      "id": "3d23d44d-4038-4046-b836-3cfd18de8626",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "428f4e86-e1eb-434a-84f7-2159c7896c1a",
+              "leftValue": "={{ $json.Creado_TiempoMaquina }}",
+              "rightValue": "08/2026",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "54986874-3542-4289-9438-08d197a75236",
+              "leftValue": "={{ $json.Creado_TiempoMaquina }}",
+              "rightValue": "07/2026",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        256
+      ],
+      "id": "08d0adf8-e885-47fa-8da4-5a1291aa294e",
+      "name": "Filter1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Limpiar lista de IDs procesados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar lista de IDs procesados": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Leer tiempos de máquina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer tiempos de máquina": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Filter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lotes de 50 filas": {
+      "main": [
+        [
+          {
+            "node": "Generar delete masivo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Acumular IDs de tiempos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acumular IDs de tiempos": {
+      "main": [
+        [
+          {
+            "node": "Generar UPDATEs de kilos reales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar UPDATEs de kilos reales": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar actualizaciones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecutar actualizaciones": {
+      "main": [
+        [
+          {
+            "node": "Lotes de 50 filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar delete masivo": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter1": {
+      "main": [
+        [
+          {
+            "node": "Lotes de 50 filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "33cf978d-b232-423a-94a7-c91575596405",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "0dE0OrBLiP7gHFHs",
+  "tags": []
+}

@@ -1,0 +1,99 @@
+version: '3.8'
+
+networks:
+  automation_network:
+    driver: bridge
+
+services:
+  # === SERVICIO 1: POSTGRESQL ===
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres_automation
+    restart: unless-stopped
+    networks:
+      - automation_network
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./volumenes/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # === SERVICIO 2: n8n ===
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n_automation
+    restart: unless-stopped
+    networks:
+      - automation_network
+    ports:
+      - "${N8N_PORT}:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL}
+    volumes:
+      - ./volumenes/n8n:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+  # === SERVICIO 3: NODE.JS ===
+  node_app:
+    image: node:20-alpine
+    container_name: node_script_runner
+    restart: unless-stopped
+    networks:
+      - automation_network
+    ports:
+      - "${NODE_PORT}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - DB_HOST=postgres
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=${POSTGRES_DB}
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./volumenes/node_app:/usr/src/app
+    working_dir: /usr/src/app
+    command: >
+      sh -c "if [ ! -f package.json ]; then 
+               npm init -y && npm install express pg; 
+             fi;
+             if [ ! -f index.js ]; then
+               echo \"const express = require('express'); const app = express(); app.get('/', (req, res) => res.send('Node script runner levantado melo...')); app.listen(3000, () => console.log('Servidor listo en el puerto 3000'));\" > index.js;
+             fi;
+             node index.js"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+  # === SERVICIO 4: OLLAMA ===
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama_automation
+    restart: unless-stopped
+    networks:
+      - automation_network
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./volumenes/ollama:/root/.ollama

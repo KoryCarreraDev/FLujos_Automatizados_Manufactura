@@ -1,0 +1,574 @@
+{
+  "name": "Sincronizar Órdenes de Trabajo (OTs)",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "$getWorkflowStaticData('global').ordenesTrabajoProcesadas = [];\nreturn [{ json: { limpio: true } }];"
+      },
+      "id": "01704c01-01c3-40f0-986c-829b83b7dd24",
+      "name": "Limpiar lista de IDs procesados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        272,
+        256
+      ],
+      "id": "1fd19526-f3af-4f59-ba08-7a38bc064006",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_TIEMPOS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 368150712,
+          "mode": "list",
+          "cachedResultName": "ordenesTrabajo"
+        },
+        "options": {}
+      },
+      "id": "d5d6fca6-3e39-4eb3-abb2-9778fdd63e61",
+      "name": "Leer ordenesTrabajo",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        688,
+        256
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 50,
+        "options": {}
+      },
+      "id": "29645402-297f-4107-b487-5ce98423987c",
+      "name": "Lotes de 50 filas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1040,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function convertirFechaLatam(fechaStr) {\n  if (!fechaStr || typeof fechaStr !== 'string' || fechaStr.trim() === '') return null;\n  const partes = fechaStr.trim().split(' ');\n  const fecha = partes[0];\n  const hora = partes[1] || '00:00:00';\n  const [d, m, a] = fecha.split('/');\n  if (!d || !m || !a) return null;\n  return `${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')} ${hora}`;\n}\n\nreturn $input.all().map(item => {\n  const data = { ...item.json };\n  const camposFecha = ['FechaDeEntrega_OrdenTrabajo', 'Fecha_OrdenTrabajo', 'Creado_OrdenTrabajo', 'Modificado_OrdenTrabajo'];\n  for (const campo of camposFecha) {\n    if (data[campo] === undefined || data[campo] === null || data[campo] === '') {\n      data[campo] = null;\n    } else {\n      data[campo] = convertirFechaLatam(data[campo]);\n    }\n  }\n  return { json: data };\n});"
+      },
+      "id": "aef69b03-079c-405b-ae6b-ec6b63e0bddc",
+      "name": "Normalizar fechas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "29c8c3df-7992-4fc5-b8b9-1aa196222b70",
+              "leftValue": "={{ $json.ID_OrdenTrabajo }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1472,
+        272
+      ],
+      "id": "4c312225-59d0-44d6-8620-308152c2b68d",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nif (!staticData.ordenesTrabajoProcesadas) staticData.ordenesTrabajoProcesadas = [];\nconst ids = $input.all().map(item => String(item.json.ID_OrdenTrabajo || '').trim()).filter(id => id);\nstaticData.ordenesTrabajoProcesadas.push(...ids);\nreturn $input.all();"
+      },
+      "id": "20b36322-1baf-4093-8de0-f3a3638634f9",
+      "name": "Acumular IDs en static",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ordenes_trabajo",
+          "mode": "list",
+          "cachedResultName": "ordenes_trabajo"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "legacy_id": "={{ $json.ID_OrdenTrabajo }}",
+            "codigo_ot": "={{ $json.NombreSeguimiento_OrdenTrabajo }}",
+            "legacy_cliente_id": "={{ $json.Cliente_OrdenTrabajo }}",
+            "legacy_referencia_id": "={{ $json.Referencia_OrdenTrabajo }}",
+            "fecha_ot": "={{ $json.Fecha_OrdenTrabajo }}",
+            "fecha_entrega": "={{ $json.FechaDeEntrega_OrdenTrabajo }}",
+            "estado_ot": "={{ $json.Estado_OrdenTrabajo }}",
+            "cantidad_plan": "={{ $json.Kilos_OrdenTrabajo }}",
+            "cantidad_realizada": "={{ $json.CantidadRealizada_OrdenTrabajo }}",
+            "procesos": "={{ $json.Procesos_OrdenTrabajo }}"
+          },
+          "matchingColumns": [
+            "legacy_id"
+          ],
+          "schema": [
+            {
+              "id": "id_ot",
+              "displayName": "id_ot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "legacy_id",
+              "displayName": "legacy_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "codigo_ot",
+              "displayName": "codigo_ot",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "legacy_cliente_id",
+              "displayName": "legacy_cliente_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "legacy_referencia_id",
+              "displayName": "legacy_referencia_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "legacy_vendedor_id",
+              "displayName": "legacy_vendedor_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "fecha_ot",
+              "displayName": "fecha_ot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "fecha_entrega",
+              "displayName": "fecha_entrega",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "estado_produccion",
+              "displayName": "estado_produccion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "estado_ot",
+              "displayName": "estado_ot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "cantidad_plan",
+              "displayName": "cantidad_plan",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "cantidad_realizada",
+              "displayName": "cantidad_realizada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "unidad_medida",
+              "displayName": "unidad_medida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "procesos",
+              "displayName": "procesos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "metadata_legacy",
+              "displayName": "metadata_legacy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "creado_en",
+              "displayName": "creado_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "0d11e580-8c62-439e-a863-22c3a539725b",
+      "name": "Upsert en PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1840,
+        288
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "PgQLDFB6kSLoLtm8",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/PgQLDFB6kSLoLtm8",
+          "cachedResultName": "sincronizar clientes"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        0
+      ],
+      "id": "593dc1b1-0970-4c3e-b6ea-d32d5813d767",
+      "name": "Sincronizar Clientes",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const idsProcesados = $getWorkflowStaticData('global').ordenesTrabajoProcesadas || [];\nif (idsProcesados.length === 0) {\n  return [{ json: { sql: null } }];\n}\nconst lista = idsProcesados.map(id => `'${String(id).replace(/'/g, \"''\")}'`).join(', ');\nconst sql = `DELETE FROM public.ordenes_trabajo WHERE legacy_id NOT IN (${lista})`;\nreturn [{ json: { sql } }];"
+      },
+      "id": "754fda03-00db-4fa4-a6d4-d96be26003ad",
+      "name": "Generar delete masivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "id": "28d4cd27-dd7f-43e2-b387-59c0627425f0",
+      "name": "Ejecutar Delete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1600,
+        128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a978216a-18eb-43b1-8e1c-6a9128ccf199",
+              "leftValue": "={{ $json.Creado_OrdenTrabajo }}",
+              "rightValue": "/2026",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        864,
+        256
+      ],
+      "id": "58733a25-4b26-4c53-8407-3a43827259af",
+      "name": "Filter"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Limpiar lista de IDs procesados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar lista de IDs procesados": {
+      "main": [
+        [
+          {
+            "node": "Leer ordenesTrabajo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer ordenesTrabajo": {
+      "main": [
+        [
+          {
+            "node": "Sincronizar Clientes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lotes de 50 filas": {
+      "main": [
+        [
+          {
+            "node": "Generar delete masivo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalizar fechas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar fechas": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Acumular IDs en static",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acumular IDs en static": {
+      "main": [
+        [
+          {
+            "node": "Upsert en PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert en PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Lotes de 50 filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar delete masivo": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Lotes de 50 filas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9ae6fb59-f126-455c-8fb3-24651bdbe302",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "UbEXSunWaDBxXl3C",
+  "tags": []
+}

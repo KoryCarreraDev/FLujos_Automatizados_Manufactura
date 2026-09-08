@@ -1,0 +1,473 @@
+{
+  "name": "Sincronizar paros",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "$getWorkflowStaticData('global').parosMaquinaProcesadas = [];\nreturn [{ json: { limpio: true } }];"
+      },
+      "id": "baa9dd31-133a-4dd0-b72b-938ed42aee21",
+      "name": "Limpiar lista de IDs procesados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        -48
+      ],
+      "id": "f5724e51-4873-4856-a43d-487e31a91020",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_TIEMPOS",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2114283515,
+          "mode": "list",
+          "cachedResultName": "parosMaquina",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID_TIEMPOS/edit#gid=2114283515"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1680,
+        -48
+      ],
+      "id": "d672238f-6f63-4ab9-a46c-2afb3cac31e6",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MGhsS3AU1dLzVvBS",
+          "name": "Sheets Sistema Beiplas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 100,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2192,
+        -48
+      ],
+      "id": "e51845b8-34cc-40b9-a349-9481bddbc84a",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "const loteItems = $input.all().map(item => item.json);\nconst mapMaquinas = $getWorkflowStaticData('global').mapeoMaquinas || {};\n\nconst escape = (v) => String(v).replace(/'/g, \"''\");\nconst formatTimestamp = (fechaStr) => {\n  if (!fechaStr) return 'NULL';\n  const partes = fechaStr.split(' ');\n  const fecha = partes[0];\n  const hora = partes[1] || '00:00:00';\n  const [d, m, a] = fecha.split('/');\n  if (!d || !m || !a) return 'NULL';\n  return `'${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')} ${hora}'`;\n};\nconst parseNumber = (val) => {\n  if (val === undefined || val === null || val === '') return 'NULL';\n  const num = parseFloat(String(val).replace(',', '.'));\n  return isNaN(num) ? 'NULL' : num;\n};\n\nconst validItems = [];\nconst errores = [];\n\nfor (const item of loteItems) {\n  const legacyId = item.ID_ParoMaquina;\n  if (!legacyId) continue;   // sin ID de paro, no se puede hacer nada\n\n  const codigoMaquina = item.Maquina_ParoMaquina?.trim();\n  const idMaquina = mapMaquinas[codigoMaquina];\n\n  if (!idMaquina) {\n    // Guardamos el registro problemático para revisión posterior\n    errores.push({\n      legacyId,\n      codigoMaquina: codigoMaquina || '(vacío)',\n      motivo: item.Motivo_ParoMaquina\n    });\n    continue;   // ← omitimos este paro en el INSERT\n  }\n\n  const tiempoLegacyId = item.IDTiempo_ParoMaquina ? `'${escape(item.IDTiempo_ParoMaquina)}'` : 'NULL';\n  const fechaInicio = formatTimestamp(item.Inicio_ParoMaquina);\n  const fechaFin = formatTimestamp(item.Fin_ParoMaquina);\n  const motivo = item.Motivo_ParoMaquina ? `'${escape(item.Motivo_ParoMaquina)}'` : 'NULL';\n  const categoria = item.Categoria_ParoMaquina ? `'${escape(item.Categoria_ParoMaquina)}'` : 'NULL';\n  const duracion = parseNumber(item.Duracion_ParoMaquina);\n\n  validItems.push(\n    `('${escape(legacyId)}', ${tiempoLegacyId}, ${idMaquina}, ${fechaInicio}, ${fechaFin}, ${motivo}, ${categoria}, ${duracion})`\n  );\n}\n\n// Si hay errores, los devolvemos en un item separado para que puedas verlos en la ejecución\nif (errores.length > 0) {\n  console.log('Paros sin mapeo de máquina:', JSON.stringify(errores));\n}\n\nif (validItems.length === 0) {\n  return [{\n    json: {\n      sql: '',\n      status: 'sin_datos_validos',\n      mensaje: 'Ningún registro tenía un mapeo de máquina válido.',\n      errores\n    }\n  }];\n}\n\nconst sql = `INSERT INTO public.paros_maquina \n  (legacy_id, legacy_tiempo_id, id_maquina, fecha_inicio, fecha_fin, motivo, categoria, duracion_horas)\nVALUES ${validItems.join(', ')}\nON CONFLICT (legacy_id) DO UPDATE SET\n  legacy_tiempo_id = EXCLUDED.legacy_tiempo_id,\n  id_maquina = EXCLUDED.id_maquina,\n  fecha_inicio = EXCLUDED.fecha_inicio,\n  fecha_fin = EXCLUDED.fecha_fin,\n  motivo = EXCLUDED.motivo,\n  categoria = EXCLUDED.categoria,\n  duracion_horas = EXCLUDED.duracion_horas;`;\n\nreturn [{ json: { sql, errores: errores.length ? errores : [] } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        -16
+      ],
+      "id": "a161141d-8b1d-42ac-818d-f88aafcc553f",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3360,
+        -16
+      ],
+      "id": "ad383e44-ba82-4699-910c-923f96574db2",
+      "name": "Execute a SQL query",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2c17fe5b-bac4-4a0d-bb21-b81a8663610d",
+              "leftValue": "={{ $json.ID_ParoMaquina }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "ec69382e-db79-45fa-8c9f-a92af034d579",
+              "leftValue": "={{ $json.Creado_ParoMaquina }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2560,
+        -32
+      ],
+      "id": "b15e976a-c3cb-48e3-a916-f3a6ee819f95",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT codigo_legacy, id_maquina FROM public.maquinas WHERE codigo_legacy IS NOT NULL;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1296,
+        -48
+      ],
+      "id": "4245a3f7-47cb-4bab-8d86-c51100b994ed",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\nconst mapMaquinas = {};\nfor (const item of rows) {\n  const r = item.json;\n  if (r.codigo_legacy) mapMaquinas[r.codigo_legacy] = r.id_maquina;\n}\n$getWorkflowStaticData('global').mapeoMaquinas = mapMaquinas;\nreturn [{ json: { mapeos_cargados: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        -48
+      ],
+      "id": "b3b0b5f4-3361-4917-af01-ca48c5811cb3",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7177a5ec-70cd-47c4-9d23-1f211a3f9fe4",
+              "leftValue": "={{ $json.sql }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        3152,
+        -16
+      ],
+      "id": "98d2ae32-df5d-479f-a893-14ea04adb260",
+      "name": "Filter",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nif (!staticData.parosMaquinaProcesadas) staticData.parosMaquinaProcesadas = [];\nconst ids = $input.all()\n  .map(item => String(item.json.ID_ParoMaquina || '').trim())\n  .filter(id => id);\nstaticData.parosMaquinaProcesadas.push(...ids);\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2768,
+        -16
+      ],
+      "id": "9585a37c-1969-4b21-9302-8af3268995ea",
+      "name": "Acumular IDs de paros"
+    },
+    {
+      "parameters": {
+        "jsCode": "const idsProcesados = $getWorkflowStaticData('global').parosMaquinaProcesadas || [];\nif (idsProcesados.length === 0) {\n  return [{ json: { sql: null } }];\n}\nconst lista = idsProcesados.map(id => `'${String(id).replace(/'/g, \"''\")}'`).join(', ');\nconst sql = `DELETE FROM public.paros_maquina WHERE legacy_id NOT IN (${lista})`;\nreturn [{ json: { sql } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        -208
+      ],
+      "id": "91acddf2-1c2f-4aa7-adb9-dd08b5f2ea34",
+      "name": "Generar delete masivo"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2704,
+        -208
+      ],
+      "id": "b1371b5d-0b0d-488f-bc8c-a0673ff878d2",
+      "name": "Ejecutar Delete",
+      "credentials": {
+        "postgres": {
+          "id": "XsaCXEPWBHt6sIRL",
+          "name": "Postgres Migración Beipals"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fd897d86-495a-41f0-8050-4b78253040f6",
+              "leftValue": "={{ $json.Creado_ParoMaquina }}",
+              "rightValue": "/2026",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        1888,
+        -48
+      ],
+      "id": "3de1c8b3-a35e-48a0-902a-a71a9a80706a",
+      "name": "Filter1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Limpiar lista de IDs procesados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar lista de IDs procesados": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Filter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Generar delete masivo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Acumular IDs de paros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acumular IDs de paros": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar delete masivo": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "07a0da00-d1aa-41f2-99c1-5bb1afabd8b7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "qWrohjslvwe1NLBw",
+  "tags": []
+}
